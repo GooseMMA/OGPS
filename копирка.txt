@@ -1,456 +1,78 @@
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Net.Http;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Shapes;
-using System.Windows.Threading;
+<Window x:Class="OGPSLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OGPS Launcher"
+        Height="600"
+        Width="900"
+        WindowStartupLocation="CenterScreen"
+        Background="#0E1013">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="60"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="80"/>
+        </Grid.RowDefinitions>
 
-namespace GameLauncher
-{
-    public partial class MainWindow : Window
-    {
-        // === Настройки (замени YOUR_USERNAME/YOUR_REPO если нужно) ===
-        private const string RepoRawBase = "https://raw.githubusercontent.com/GooseMMA/OGPS/main";
-        private const string ManifestUrl = RepoRawBase + "/Mods/manifest.json";       // manifest в Mods/
-        private const string NewsUrl = RepoRawBase + "/Launcher/news.json";          // новости в Launcher/
-        private const string OGPS_ZIP_RESOURCE_NAME = "OGPS.zip"; // filename embedded
+        <!-- Верхняя панель -->
+        <Border Background="#1E2126" Grid.Row="0">
+            <TextBlock Text="OGPS Launcher"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Foreground="White"
+                       FontSize="22"
+                       FontWeight="Bold"/>
+        </Border>
 
-        // runtime paths & config
-        private string installRoot = ""; // папка куда распаковываем (например C:\Games\OGPS или выбранная)
-        private string gameExeRelative = Path.Combine("PixelWorlds.exe"); // относительный путь внутри installRoot
-        private string modsRelative = Path.Combine("PixelWorlds", "Mods"); // per user earlier said OGPS/PixelWorlds/Mods: but user specified PixelWorlds.exe in OGPS/PixelWorlds? clarify: we'll create installRoot/PixelWorlds/...
-        private string configPath;
+        <!-- Центральная часть -->
+        <Grid Grid.Row="1" Margin="20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="3*"/>
+            </Grid.ColumnDefinitions>
 
-        // http client
-        private HttpClient http = new HttpClient();
+            <!-- Новости / Ивенты -->
+            <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                <TextBlock Text="Новости и события"
+                           Foreground="White"
+                           FontWeight="Bold"
+                           FontSize="18"
+                           Margin="0,0,0,10"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="NewsPanel" />
+                </ScrollViewer>
+            </StackPanel>
 
-        // UI helpers
-        private double currentPercent = 0;
+            <!-- Основной контент -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Button x:Name="SelectFolderButton"
+                        Content="Выбрать папку с игрой"
+                        Width="220" Height="40"
+                        Margin="0,0,0,10"
+                        Click="SelectFolder_Click"/>
 
-        public MainWindow()
-        {
-            InitializeComponent();
-            // config path in local appdata
-            string cfgDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OGPSLauncher");
-            Directory.CreateDirectory(cfgDir);
-            configPath = Path.Combine(cfgDir, "config.json");
-            Loaded += MainWindow_Loaded;
-        }
+                <Button x:Name="PlayButton"
+                        Content="Play"
+                        Width="200" Height="60"
+                        FontSize="20"
+                        Click="PlayButton_Click"/>
 
-        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
-        {
-            // load config if exists
-            if (File.Exists(configPath))
-            {
-                try
-                {
-                    var cfg = JsonConvert.DeserializeObject<Config>(File.ReadAllText(configPath));
-                    installRoot = cfg!.InstallDir;
-                }
-                catch { }
-            }
+                <!-- Кружок прогресса -->
+                <ProgressBar x:Name="DownloadProgress"
+                             Width="200" Height="8"
+                             Margin="0,10,0,0"
+                             Foreground="#3FA9F5"
+                             Background="#333333"
+                             Visibility="Collapsed"/>
+            </StackPanel>
+        </Grid>
 
-            // If not configured or folder does not contain PixelWorlds.exe -> ask install
-            if (string.IsNullOrWhiteSpace(installRoot) || !File.Exists(Path.Combine(installRoot, "PixelWorlds.exe")))
-            {
-                var res = MessageBox.Show("Game not found. Install now?", "OGPS Launcher", MessageBoxButton.YesNo);
-                if (res == MessageBoxResult.Yes)
-                {
-                    if (!SelectAndInstall())
-                    {
-                        Close();
-                        return;
-                    }
-                }
-                else
-                {
-                    StatusText.Text = "Game not installed.";
-                    MainBtn.Content = "Exit";
-                    MainBtn.Tag = "exit";
-                    return;
-                }
-            }
-
-            // load news
-            _ = LoadNewsAsync();
-
-            // check manifest and update mods if needed
-            await CheckAndPrepareModsAsync();
-        }
-
-        private bool SelectAndInstall()
-        {
-            using var fbd = new System.Windows.Forms.FolderBrowserDialog();
-            fbd.Description = "Select folder where the game will be installed (OGPS)";
-            fbd.ShowNewFolderButton = true;
-            if (fbd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            {
-                // we'll create installRoot/OGPS (to avoid polluting user-chosen folder)
-                installRoot = Path.Combine(fbd.SelectedPath, "OGPS");
-                Directory.CreateDirectory(installRoot);
-
-                try
-                {
-                    ExtractEmbeddedZipTo(installRoot);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Extraction failed: " + ex.Message);
-                    return false;
-                }
-
-                // copy launcher exe into the installRoot as OGPSLauncher.exe
-                try
-                {
-                    var currentExe = Process.GetCurrentProcess().MainModule!.FileName!;
-                    var destExe = Path.Combine(installRoot, "OGPSLauncher.exe");
-                    File.Copy(currentExe, destExe, true);
-                    CreateShortcutOnDesktop("OGPSLauncher", destExe);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Failed to copy launcher or create shortcut: " + ex.Message);
-                    // not fatal
-                }
-
-                // save config
-                SaveConfig();
-                return true;
-            }
-            return false;
-        }
-
-        private void ExtractEmbeddedZipTo(string outputDir)
-        {
-            // resource name: default is "<AssemblyName>.OGPS.zip" OR simply find resource that ends with OGPS.zip
-            var asm = Assembly.GetExecutingAssembly();
-            string? resourceName = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith(OGPS_ZIP_RESOURCE_NAME, StringComparison.OrdinalIgnoreCase));
-            if (resourceName == null)
-                throw new FileNotFoundException("Embedded resource OGPS.zip not found. Add OGPS.zip to project as EmbeddedResource.");
-
-            using Stream stream = asm.GetManifestResourceStream(resourceName)!;
-            // copy to temp file and extract
-            string temp = Path.Combine(Path.GetTempPath(), "OGPS_embedded.zip");
-            using (var fs = new FileStream(temp, FileMode.Create, FileAccess.Write))
-                stream.CopyTo(fs);
-
-            // extract
-            ZipFile.ExtractToDirectory(temp, outputDir, true);
-            File.Delete(temp);
-        }
-
-        private void CreateShortcutOnDesktop(string name, string targetExe)
-        {
-            try
-            {
-                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                string shortcutPath = Path.Combine(desktop, name + ".lnk");
-
-                // Use WScript.Shell via COM (no extra references)
-                Type t = Type.GetTypeFromProgID("WScript.Shell");
-                dynamic shell = Activator.CreateInstance(t);
-                var shortcut = shell.CreateShortcut(shortcutPath);
-                shortcut.TargetPath = targetExe;
-                shortcut.WorkingDirectory = Path.GetDirectoryName(targetExe);
-                shortcut.IconLocation = targetExe;
-                shortcut.Save();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("CreateShortcut failed: " + ex.Message);
-            }
-        }
-
-        private void SaveConfig()
-        {
-            var cfg = new Config { InstallDir = installRoot };
-            File.WriteAllText(configPath, JsonConvert.SerializeObject(cfg, Formatting.Indented));
-        }
-
-        // === NEWS loading ===
-        private async Task LoadNewsAsync()
-        {
-            try
-            {
-                StatusText.Text = "Loading news...";
-                var json = await http.GetStringAsync(NewsUrl);
-                var news = JsonConvert.DeserializeObject<NewsContainer>(json);
-
-                Dispatcher.Invoke(() =>
-                {
-                    NewsStack.Children.Clear();
-                    if (news?.items != null)
-                    {
-                        foreach (var it in news.items)
-                        {
-                            var tb = new System.Windows.Controls.TextBlock
-                            {
-                                Text = "• " + it.title,
-                                Foreground = Brushes.LightGray,
-                                Margin = new Thickness(0, 0, 0, 6),
-                                TextWrapping = TextWrapping.Wrap
-                            };
-                            tb.MouseEnter += (s, e) => tb.Margin = new Thickness(0, -6, 0, 12);
-                            tb.MouseLeave += (s, e) => tb.Margin = new Thickness(0, 0, 0, 6);
-                            NewsStack.Children.Add(tb);
-                        }
-                    }
-                    PatchNotes.Text = news?.patchnotes ?? "No patchnotes.";
-                    StatusText.Text = "Ready.";
-                });
-            }
-            catch
-            {
-                StatusText.Text = "Couldn't load news (offline).";
-            }
-        }
-
-        // === Manifest & Mods sync ===
-        private async Task CheckAndPrepareModsAsync()
-        {
-            StatusText.Text = "Checking mods manifest...";
-            try
-            {
-                var manifestJson = await http.GetStringAsync(ManifestUrl);
-                var manifest = JsonConvert.DeserializeObject<ModsManifest>(manifestJson);
-
-                string modsFolder = Path.Combine(installRoot, "Mods");
-                Directory.CreateDirectory(modsFolder);
-
-                // Build list of files that need download
-                var toDownload = new List<ManifestEntry>();
-                foreach (var entry in manifest.files)
-                {
-                    string localPath = Path.Combine(modsFolder, entry.path.Replace("/", Path.DirectorySeparatorChar.ToString()));
-                    if (!File.Exists(localPath))
-                    {
-                        toDownload.Add(entry);
-                    }
-                    else
-                    {
-                        var h = ComputeSHA256(localPath);
-                        if (!string.Equals(h, entry.sha256, StringComparison.OrdinalIgnoreCase))
-                            toDownload.Add(entry);
-                    }
-                }
-
-                if (toDownload.Count == 0)
-                {
-                    StatusText.Text = "Mods up to date.";
-                    SetMainButtonAsPlay();
-                    return;
-                }
-
-                // set UI state
-                StatusText.Text = $"Need to update {toDownload.Count} files";
-                MainBtn.Content = "Update";
-                MainBtn.Tag = "update";
-
-                // store manifest for later download when user presses button OR auto-start download:
-                // For UX we start download automatically
-                await DownloadAndApplyAsync(toDownload, modsFolder);
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = "Manifest check failed: " + ex.Message;
-                SetMainButtonAsPlay();
-            }
-        }
-
-        private void SetMainButtonAsPlay()
-        {
-            MainBtn.Content = "Play";
-            MainBtn.Tag = "play";
-            UpdateProgress(0);
-        }
-
-        private async Task DownloadAndApplyAsync(List<ManifestEntry> toDownload, string modsFolder)
-        {
-            // sequential download with per-file progress aggregated
-            long totalBytes = 0;
-            var sizes = new Dictionary<ManifestEntry, long>();
-            // first HEAD each URL to estimate total bytes (best-effort)
-            try
-            {
-                foreach (var e in toDownload)
-                {
-                    var url = RepoRawBase + "/Mods/" + e.path;
-                    var resp = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
-                    if (resp.IsSuccessStatusCode && resp.Content.Headers.ContentLength.HasValue)
-                    {
-                        sizes[e] = resp.Content.Headers.ContentLength.Value;
-                        totalBytes += sizes[e];
-                    }
-                    else
-                    {
-                        sizes[e] = -1;
-                    }
-                }
-            }
-            catch { /* ignore head errors */ }
-
-            long downloadedSoFar = 0;
-            // download each file streaming and update progress
-            foreach (var e in toDownload)
-            {
-                string url = RepoRawBase + "/Mods/" + e.path;
-                string localPath = Path.Combine(modsFolder, e.path.Replace("/", Path.DirectorySeparatorChar.ToString()));
-                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-
-                // stream download
-                StatusText.Text = $"Downloading {e.path} ...";
-                using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                resp.EnsureSuccessStatusCode();
-                var contentLength = resp.Content.Headers.ContentLength ?? -1L;
-
-                using var inStream = await resp.Content.ReadAsStreamAsync();
-                using var outFs = new FileStream(localPath + ".tmp", FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-
-                var buffer = new byte[81920];
-                int read;
-                while ((read = await inStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                {
-                    await outFs.WriteAsync(buffer, 0, read);
-                    downloadedSoFar += read;
-                    // compute percent
-                    double percent = 0;
-                    if (totalBytes > 0) percent = (double)downloadedSoFar / totalBytes * 100.0;
-                    else if (contentLength > 0) percent = Math.Min(100, (double)outFs.Length / contentLength * 100.0);
-                    UpdateProgress(percent);
-                }
-
-                outFs.Close();
-                // replace file (atomic-ish)
-                if (File.Exists(localPath)) File.Delete(localPath);
-                File.Move(localPath + ".tmp", localPath);
-
-                // verify hash
-                string h = ComputeSHA256(localPath);
-                if (!string.Equals(h, e.sha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    StatusText.Text = $"Hash mismatch for {e.path}";
-                    // keep file but warn
-                }
-            }
-
-            StatusText.Text = "Mods updated.";
-            SetMainButtonAsPlay();
-        }
-
-        // Update rectangular progress bar width and circular percent text + arc
-        private void UpdateProgress(double percent)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                if (percent < 0) percent = 0;
-                if (percent > 100) percent = 100;
-                PercentText.Text = $"{(int)percent}%";
-                // rectangular
-                var fullWidth = ((Border)ProgressFill.Parent).ActualWidth;
-                ProgressFill.Width = fullWidth * (percent / 100.0);
-                // circular arc: approximate by drawing an arc path
-                ProgressArc.Data = CreateArcGeometry(28, 28, 22, percent);
-            });
-        }
-
-        private Geometry CreateArcGeometry(double cx, double cy, double radius, double percent)
-        {
-            // percent 0..100 -> angle 0..360
-            double angle = percent / 100.0 * 360.0;
-            if (angle <= 0.1) return Geometry.Empty;
-            if (angle >= 360) angle = 359.999;
-
-            double startAngle = -90;
-            double endAngle = startAngle + angle;
-            double radStart = startAngle * Math.PI / 180.0;
-            double radEnd = endAngle * Math.PI / 180.0;
-
-            Point start = new Point(cx + radius * Math.Cos(radStart), cy + radius * Math.Sin(radStart));
-            Point end = new Point(cx + radius * Math.Cos(radEnd), cy + radius * Math.Sin(radEnd));
-            bool isLarge = angle > 180.0;
-
-            var stream = new StreamGeometry();
-            using (var ctx = stream.Open())
-            {
-                ctx.BeginFigure(start, false, false);
-                ctx.ArcTo(end, new Size(radius, radius), 0, isLarge, SweepDirection.Clockwise, true, false);
-            }
-            stream.Freeze();
-            return stream;
-        }
-
-        private string ComputeSHA256(string filePath)
-        {
-            using var sha = SHA256.Create();
-            using var stream = File.OpenRead(filePath);
-            var hash = sha.ComputeHash(stream);
-            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-        }
-
-        // === MAIN BUTTON CLICK ===
-        private async void MainBtn_Click(object sender, RoutedEventArgs e)
-        {
-            string tag = (MainBtn.Tag as string) ?? "";
-            if (tag == "update")
-            {
-                // we already auto-downloaded in CheckAndPrepareModsAsync; but allow manual full check
-                StatusText.Text = "Updating mods (manual)...";
-                await CheckAndPrepareModsAsync();
-            }
-            else if (MainBtn.Content?.ToString() == "Exit")
-            {
-                Close();
-            }
-            else
-            {
-                // Play
-                string exe = Path.Combine(installRoot, "PixelWorlds.exe");
-                if (File.Exists(exe))
-                {
-                    try
-                    {
-                        Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = true });
-                        Application.Current.Shutdown();
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show("Failed to start game: " + ex.Message);
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("Game executable not found.");
-                }
-            }
-        }
-
-        private void Discord_Click(object sender, RoutedEventArgs e)
-        {
-            Process.Start(new ProcessStartInfo("https://discord.gg/your_link") { UseShellExecute = true });
-        }
-
-        private void Website_Click(object sender, RoutedEventArgs e)
-        {
-            Process.Start(new ProcessStartInfo("https://yourwebsite.com") { UseShellExecute = true });
-        }
-
-        // === HELPERS / DTOs ===
-        private class Config { public string InstallDir { get; set; } = ""; }
-        private class ModsManifest { public List<ManifestEntry> files { get; set; } = new(); }
-        private class ManifestEntry { public string path { get; set; } = ""; public string sha256 { get; set; } = ""; }
-        private class NewsContainer { public List<NewsItem> items { get; set; } = new(); public string patchnotes { get; set; } = ""; }
-        private class NewsItem { public string title { get; set; } = ""; public string body { get; set; } = ""; }
-    }
-}
+        <!-- Нижняя панель -->
+        <Border Background="#1E2126" Grid.Row="2" VerticalAlignment="Center">
+            <TextBlock Text="© 2025 OGPS Team | &amp; Cloud Updates System"
+                       Foreground="#999999"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="12"/>
+        </Border>
+    </Grid>
+</Window>
