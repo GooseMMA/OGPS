@@ -1,78 +1,143 @@
-<Window x:Class="OGPSLauncher.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="OGPS Launcher"
-        Height="600"
-        Width="900"
-        WindowStartupLocation="CenterScreen"
-        Background="#0E1013">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="60"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="80"/>
-        </Grid.RowDefinitions>
+using System;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Diagnostics;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Windows.Forms; // Для выбора папки
+using IOPath = System.IO.Path; // Алиас для Path, чтобы не конфликтовало с System.Windows.Shapes.Path
 
-        <!-- Верхняя панель -->
-        <Border Background="#1E2126" Grid.Row="0">
-            <TextBlock Text="OGPS Launcher"
-                       VerticalAlignment="Center"
-                       HorizontalAlignment="Center"
-                       Foreground="White"
-                       FontSize="22"
-                       FontWeight="Bold"/>
-        </Border>
+namespace OGPSLauncher
+{
+    public partial class MainWindow : Window
+    {
+        private string gameFolderPath = string.Empty;
+        private string configPath;
+        private const string configFileName = "launcher_config.txt";
+        private const string repoModsUrl = "https://github.com/GooseMMA/OGPS/raw/main/Mods/";
+        private const string repoLauncherUrl = "https://github.com/GooseMMA/OGPS/raw/main/Launcher/";
 
-        <!-- Центральная часть -->
-        <Grid Grid.Row="1" Margin="20">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*"/>
-                <ColumnDefinition Width="3*"/>
-            </Grid.ColumnDefinitions>
+        public MainWindow()
+        {
+            InitializeComponent();
+            configPath = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OGPSLauncher", configFileName);
+            LoadConfig();
+        }
 
-            <!-- Новости / Ивенты -->
-            <StackPanel Grid.Column="0" Margin="0,0,20,0">
-                <TextBlock Text="Новости и события"
-                           Foreground="White"
-                           FontWeight="Bold"
-                           FontSize="18"
-                           Margin="0,0,0,10"/>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel x:Name="NewsPanel" />
-                </ScrollViewer>
-            </StackPanel>
+        private void LoadConfig()
+        {
+            try
+            {
+                if (File.Exists(configPath))
+                {
+                    gameFolderPath = File.ReadAllText(configPath);
+                    if (!Directory.Exists(gameFolderPath))
+                        gameFolderPath = string.Empty;
+                }
+            }
+            catch { }
+        }
 
-            <!-- Основной контент -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <Button x:Name="SelectFolderButton"
-                        Content="Выбрать папку с игрой"
-                        Width="220" Height="40"
-                        Margin="0,0,0,10"
-                        Click="SelectFolder_Click"/>
+        private void SaveConfig()
+        {
+            try
+            {
+                Directory.CreateDirectory(IOPath.GetDirectoryName(configPath)!);
+                File.WriteAllText(configPath, gameFolderPath);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Ошибка сохранения конфига: {ex.Message}");
+            }
+        }
 
-                <Button x:Name="PlayButton"
-                        Content="Play"
-                        Width="200" Height="60"
-                        FontSize="20"
-                        Click="PlayButton_Click"/>
+        private void SelectFolder_Click(object sender, RoutedEventArgs e)
+        {
+            using (var dialog = new FolderBrowserDialog())
+            {
+                dialog.Description = "Выберите папку, куда установлена игра OGPS";
+                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                {
+                    gameFolderPath = dialog.SelectedPath;
+                    SaveConfig();
+                    System.Windows.MessageBox.Show($"Путь сохранён: {gameFolderPath}");
+                }
+            }
+        }
 
-                <!-- Кружок прогресса -->
-                <ProgressBar x:Name="DownloadProgress"
-                             Width="200" Height="8"
-                             Margin="0,10,0,0"
-                             Foreground="#3FA9F5"
-                             Background="#333333"
-                             Visibility="Collapsed"/>
-            </StackPanel>
-        </Grid>
+        private async void PlayButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(gameFolderPath))
+            {
+                System.Windows.MessageBox.Show("Выберите папку с игрой перед запуском!");
+                return;
+            }
 
-        <!-- Нижняя панель -->
-        <Border Background="#1E2126" Grid.Row="2" VerticalAlignment="Center">
-            <TextBlock Text="© 2025 OGPS Team | &amp; Cloud Updates System"
-                       Foreground="#999999"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="12"/>
-        </Border>
-    </Grid>
-</Window>
+            DownloadProgress.Visibility = Visibility.Visible;
+            await UpdateModsAsync();
+
+            // После обновления — запуск игры
+            string exePath = IOPath.Combine(gameFolderPath, "PixelWorlds.exe");
+            if (File.Exists(exePath))
+            {
+                Process.Start(new ProcessStartInfo(exePath) { WorkingDirectory = gameFolderPath });
+                Application.Current.Shutdown();
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("Файл PixelWorlds.exe не найден!");
+            }
+        }
+
+        private async Task UpdateModsAsync()
+        {
+            try
+            {
+                string modsFolder = IOPath.Combine(gameFolderPath, "Mods");
+                Directory.CreateDirectory(modsFolder);
+
+                using var http = new HttpClient();
+
+                // Заглушка — пример скачивания одного файла (можно заменить на чтение manifest.json)
+                string[] modFiles = { "OG_addons.dll" };
+
+                for (int i = 0; i < modFiles.Length; i++)
+                {
+                    string fileName = modFiles[i];
+                    string url = repoModsUrl + fileName;
+                    string localPath = IOPath.Combine(modsFolder, fileName);
+
+                    using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                    response.EnsureSuccessStatusCode();
+
+                    using var fs = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    var total = response.Content.Headers.ContentLength ?? -1L;
+                    var downloaded = 0L;
+                    var buffer = new byte[8192];
+                    using var stream = await response.Content.ReadAsStreamAsync();
+
+                    int read;
+                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await fs.WriteAsync(buffer, 0, read);
+                        downloaded += read;
+
+                        if (total > 0)
+                        {
+                            DownloadProgress.Value = (double)downloaded / total * 100;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Ошибка при обновлении: {ex.Message}");
+            }
+            finally
+            {
+                DownloadProgress.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+}
