@@ -1,143 +1,153 @@
 using System;
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
-using System.Diagnostics;
 using System.Net.Http;
-using System.Threading.Tasks;
-using System.Windows.Forms; // Для выбора папки
-using IOPath = System.IO.Path; // Алиас для Path, чтобы не конфликтовало с System.Windows.Shapes.Path
+using System.Text.Json;
+using System.Windows;
+using System.IO.Compression;
+using IWshRuntimeLibrary;
 
-namespace OGPSLauncher
+namespace GameLauncher
 {
     public partial class MainWindow : Window
     {
-        private string gameFolderPath = string.Empty;
-        private string configPath;
-        private const string configFileName = "launcher_config.txt";
-        private const string repoModsUrl = "https://github.com/GooseMMA/OGPS/raw/main/Mods/";
-        private const string repoLauncherUrl = "https://github.com/GooseMMA/OGPS/raw/main/Launcher/";
+        private string configPath = "config.json";
+        private LauncherConfig config;
+
+        private string githubModsFolder = "https://raw.githubusercontent.com/GooseMMA/OGPS/main/Mods/";
 
         public MainWindow()
         {
             InitializeComponent();
-            configPath = IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OGPSLauncher", configFileName);
             LoadConfig();
+            LoadNews();
+            CheckGameStatus();
         }
 
         private void LoadConfig()
         {
-            try
+            if (File.Exists(configPath))
             {
-                if (File.Exists(configPath))
-                {
-                    gameFolderPath = File.ReadAllText(configPath);
-                    if (!Directory.Exists(gameFolderPath))
-                        gameFolderPath = string.Empty;
-                }
+                string json = File.ReadAllText(configPath);
+                config = JsonSerializer.Deserialize<LauncherConfig>(json);
             }
-            catch { }
+            else
+            {
+                config = new LauncherConfig
+                {
+                    gamePath = "",
+                    launcherPath = Path.Combine(Environment.CurrentDirectory, "OGPSLauncher.exe"),
+                    modsFolder = ""
+                };
+            }
         }
 
         private void SaveConfig()
         {
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(configPath, json);
+        }
+
+        private void LoadNews()
+        {
+            // Подгружаем новости из GitHub (папка Launcher/News)
             try
             {
-                Directory.CreateDirectory(IOPath.GetDirectoryName(configPath)!);
-                File.WriteAllText(configPath, gameFolderPath);
-            }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show($"Ошибка сохранения конфига: {ex.Message}");
-            }
-        }
-
-        private void SelectFolder_Click(object sender, RoutedEventArgs e)
-        {
-            using (var dialog = new FolderBrowserDialog())
-            {
-                dialog.Description = "Выберите папку, куда установлена игра OGPS";
-                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                using HttpClient client = new HttpClient();
+                var newsUrls = new string[]
                 {
-                    gameFolderPath = dialog.SelectedPath;
-                    SaveConfig();
-                    System.Windows.MessageBox.Show($"Путь сохранён: {gameFolderPath}");
+                    "https://raw.githubusercontent.com/GooseMMA/OGPS/main/Launcher/News/news1.txt",
+                    "https://raw.githubusercontent.com/GooseMMA/OGPS/main/Launcher/News/news2.txt"
+                };
+
+                foreach (var url in newsUrls)
+                {
+                    var text = client.GetStringAsync(url).Result;
+                    NewsList.Items.Add(text);
                 }
             }
+            catch { NewsList.Items.Add("Failed to load news"); }
         }
 
-        private async void PlayButton_Click(object sender, RoutedEventArgs e)
+        private void CheckGameStatus()
         {
-            if (string.IsNullOrEmpty(gameFolderPath))
+            // Проверяем существует ли игра
+            if (!string.IsNullOrEmpty(config.gamePath) && File.Exists(config.gamePath))
             {
-                System.Windows.MessageBox.Show("Выберите папку с игрой перед запуском!");
-                return;
-            }
-
-            DownloadProgress.Visibility = Visibility.Visible;
-            await UpdateModsAsync();
-
-            // После обновления — запуск игры
-            string exePath = IOPath.Combine(gameFolderPath, "PixelWorlds.exe");
-            if (File.Exists(exePath))
-            {
-                Process.Start(new ProcessStartInfo(exePath) { WorkingDirectory = gameFolderPath });
-                Application.Current.Shutdown();
+                ActionButton.Content = "Play";
             }
             else
             {
-                System.Windows.MessageBox.Show("Файл PixelWorlds.exe не найден!");
+                ActionButton.Content = "Download";
             }
         }
 
-        private async Task UpdateModsAsync()
+        private async void ActionButton_Click(object sender, RoutedEventArgs e)
         {
-            try
+            if ((string)ActionButton.Content == "Download")
             {
-                string modsFolder = IOPath.Combine(gameFolderPath, "Mods");
-                Directory.CreateDirectory(modsFolder);
+                // Распаковываем встроенный zip
+                string folder = SelectFolder();
+                if (folder == null) return;
 
-                using var http = new HttpClient();
+                string zipPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "OGPS.zip");
+                ZipFile.ExtractToDirectory(zipPath, folder);
 
-                // Заглушка — пример скачивания одного файла (можно заменить на чтение manifest.json)
-                string[] modFiles = { "OG_addons.dll" };
+                config.gamePath = Path.Combine(folder, "PixelWorlds.exe");
+                config.modsFolder = Path.Combine(folder, "PixelWorlds", "Mods");
+                SaveConfig();
 
-                for (int i = 0; i < modFiles.Length; i++)
-                {
-                    string fileName = modFiles[i];
-                    string url = repoModsUrl + fileName;
-                    string localPath = IOPath.Combine(modsFolder, fileName);
-
-                    using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                    response.EnsureSuccessStatusCode();
-
-                    using var fs = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                    var total = response.Content.Headers.ContentLength ?? -1L;
-                    var downloaded = 0L;
-                    var buffer = new byte[8192];
-                    using var stream = await response.Content.ReadAsStreamAsync();
-
-                    int read;
-                    while ((read = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                    {
-                        await fs.WriteAsync(buffer, 0, read);
-                        downloaded += read;
-
-                        if (total > 0)
-                        {
-                            DownloadProgress.Value = (double)downloaded / total * 100;
-                        }
-                    }
-                }
+                CreateShortcut(config.launcherPath);
+                ActionButton.Content = "Play";
             }
-            catch (Exception ex)
+            else if ((string)ActionButton.Content == "Play")
             {
-                System.Windows.MessageBox.Show($"Ошибка при обновлении: {ex.Message}");
-            }
-            finally
-            {
-                DownloadProgress.Visibility = Visibility.Collapsed;
+                // Проверяем DLL
+                await UpdateMods();
+                System.Diagnostics.Process.Start(config.gamePath);
             }
         }
+
+        private string SelectFolder()
+        {
+            // Используем стандартное диалоговое окно
+            var dlg = new System.Windows.Forms.FolderBrowserDialog();
+            System.Windows.Forms.DialogResult result = dlg.ShowDialog();
+            if (result == System.Windows.Forms.DialogResult.OK)
+                return dlg.SelectedPath;
+            return null;
+        }
+
+        private async System.Threading.Tasks.Task UpdateMods()
+        {
+            Directory.CreateDirectory(config.modsFolder);
+            string[] mods = { "OG_addons.dll" }; // Для примера, можно динамически из GitHub API
+
+            using HttpClient client = new HttpClient();
+            foreach (var mod in mods)
+            {
+                var url = githubModsFolder + mod;
+                var bytes = await client.GetByteArrayAsync(url);
+                File.WriteAllBytes(Path.Combine(config.modsFolder, mod), bytes);
+            }
+        }
+
+        private void CreateShortcut(string exePath)
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            string shortcutLocation = Path.Combine(desktop, "OGPSLauncher.lnk");
+
+            WshShell shell = new WshShell();
+            IWshShortcut shortcut = (IWshShortcut)shell.CreateShortcut(shortcutLocation);
+            shortcut.Description = "OGPS Launcher";
+            shortcut.TargetPath = exePath;
+            shortcut.Save();
+        }
+    }
+
+    public class LauncherConfig
+    {
+        public string gamePath { get; set; }
+        public string launcherPath { get; set; }
+        public string modsFolder { get; set; }
     }
 }
