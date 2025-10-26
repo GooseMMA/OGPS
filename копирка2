@@ -1,15 +1,2 @@
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
-  Определение проектов для восстановления...
-  Все проекты обновлены для восстановления.
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(237,16): error CS0246: Не удалось найти тип или имя пространства имен "IEnumerable<>" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\
-OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-
-Ошибка сборки.
-
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(237,16): error CS0246: Не удалось найти тип или имя пространства имен "IEnumerable<>" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\ 
-OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-    Предупреждений: 0
-    Ошибок: 1
-
-Прошло времени 00:00:03.09
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
+using System.Collections.Generic;
+using System.Windows.Media;
