@@ -1,28 +1,15 @@
-private void Window_Loaded(object sender, RoutedEventArgs e)
-{
-    foreach (var element in FindVisualChildren<FrameworkElement>(this))
-    {
-        if (element.Opacity == 0)
-        {
-            var fade = (Storyboard)FindResource("FadeInStoryboard");
-            Storyboard sb = fade.Clone();
-            Storyboard.SetTarget(sb, element);
-            sb.Begin();
-        }
-    }
-}
+PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
+  Определение проектов для восстановления...
+  Все проекты обновлены для восстановления.
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(237,16): error CS0246: Не удалось найти тип или имя пространства имен "IEnumerable<>" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\
+OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
 
-private static IEnumerable<T> FindVisualChildren<T>(DependencyObject depObj) where T : DependencyObject
-{
-    if (depObj != null)
-    {
-        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(depObj); i++)
-        {
-            var child = VisualTreeHelper.GetChild(depObj, i);
-            if (child is T t) yield return t;
+Ошибка сборки.
 
-            foreach (var childOfChild in FindVisualChildren<T>(child))
-                yield return childOfChild;
-        }
-    }
-}
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(237,16): error CS0246: Не удалось найти тип или имя пространства имен "IEnumerable<>" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\ 
+OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+    Предупреждений: 0
+    Ошибок: 1
+
+Прошло времени 00:00:03.09
+PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
