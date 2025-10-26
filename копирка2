@@ -1,16 +1,13 @@
-<Button x:Name="MenuButton"
-        Content="⋮"
-        FontSize="18"
-        FontWeight="Bold"
-        Foreground="White"
-        Background="Transparent"
-        BorderBrush="{x:Null}"
-        HorizontalAlignment="Right"
-        VerticalAlignment="Top"
-        Margin="0,10,10,0"
-        Click="MenuButton_Click"/>
+PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
+  Определение проектов для восстановления...
+  Все проекты обновлены для восстановления.
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(8,102): error CS1061: "MainWindow" не содержит определения "Window_Loaded", и не удалось найти доступный метод расширения "Window_Loaded", принимающий тип "MainWindow"
+ в качестве первого аргумента (возможно, пропущена директива using или ссылка на сборку). [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
 
-<ContextMenu x:Name="OptionsMenu">
-    <MenuItem Header="📁 Открыть папку" Click="OpenFolderFromMenu_Click"/>
-    <MenuItem Header="🗑 Удалить игру" Click="UninstallFromMenu_Click"/>
-</ContextMenu>
+Ошибка сборки.
+
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(8,102): error CS1061: "MainWindow" не содержит определения "Window_Loaded", и не удалось найти доступный метод расширения "Window_Loaded", принимающий тип "MainWindow" 
+ в качестве первого аргумента (возможно, пропущена директива using или ссылка на сборку). [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+    Предупреждений: 0
+    Ошибок: 1
+
