@@ -1,2 +1,29 @@
-using System.Collections.Generic;
-using System.Windows.Media;
+PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
+  Определение проектов для восстановления...
+  Все проекты обновлены для восстановления.
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(157,13): error CS0103: Имя "MenuButton" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(165,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(170,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(179,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(231,25): error CS0246: Не удалось найти тип или имя пространства имен "Storyboard" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\One 
+Drive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(232,13): error CS0246: Не удалось найти тип или имя пространства имен "Storyboard" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\One 
+Drive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(233,13): error CS0103: Имя "Storyboard" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+
+Ошибка сборки.
+
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(157,13): error CS0103: Имя "MenuButton" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(165,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(170,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(179,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(231,25): error CS0246: Не удалось найти тип или имя пространства имен "Storyboard" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\One 
+Drive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(232,13): error CS0246: Не удалось найти тип или имя пространства имен "Storyboard" (возможно, отсутствует директива using или ссылка на сборку). [C:\Users\andre\One
+Drive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(233,13): error CS0103: Имя "Storyboard" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+    Предупреждений: 0
+    Ошибок: 7
+
+Прошло времени 00:00:01.75
+PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
