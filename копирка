@@ -1,17 +1,128 @@
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
-  Определение проектов для восстановления...
-  Все проекты обновлены для восстановления.
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(164,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(169,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(178,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+<Window x:Class="OGPSLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OGPS Launcher" Height="700" Width="1300"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Background="#FF1E1E1E">
+    <Grid>
+        <!-- Animated background -->
+        <Image x:Name="BackgroundImage" Stretch="UniformToFill" Opacity="0.35"/>
 
-Ошибка сборки.
+        <!-- Content overlay -->
+        <Grid Margin="30">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="5*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(164,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(169,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(178,13): error CS0103: Имя "OptionsMenu" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-    Предупреждений: 0
-    Ошибок: 3
+            <!-- LEFT SIDE: Screenshot + Play button -->
+            <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                <Border CornerRadius="10" Background="#22FFFFFF" Padding="10" Margin="0,0,0,15" Effect="{DynamicResource DropShadow}">
+                    <Image x:Name="UpdateScreenshot" Width="360" Height="240" Stretch="UniformToFill" />
+                </Border>
 
-Прошло времени 00:00:03.33
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
+                <Button x:Name="MainButton" Content="▶ Play" IsEnabled="False"
+                        Height="50" FontSize="20" FontWeight="Bold"
+                        Background="#28A745" Foreground="White"
+                        BorderThickness="0" Cursor="Hand"
+                        Click="MainButton_Click"
+                        Margin="0,10,0,0">
+                    <Button.Triggers>
+                        <EventTrigger RoutedEvent="MouseEnter">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <ColorAnimation Storyboard.TargetProperty="(Button.Background).(SolidColorBrush.Color)"
+                                                    To="#34D058" Duration="0:0:0.2"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                        <EventTrigger RoutedEvent="MouseLeave">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <ColorAnimation Storyboard.TargetProperty="(Button.Background).(SolidColorBrush.Color)"
+                                                    To="#28A745" Duration="0:0:0.2"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Button.Triggers>
+                </Button>
+
+                <ProgressBar x:Name="InstallProgressBar" Height="10" Margin="0,15,0,5" Visibility="Collapsed"/>
+                <TextBlock x:Name="StatusText" Text="Choose installation folder"
+                           Foreground="White" FontSize="14" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- RIGHT SIDE: Info panels -->
+            <StackPanel Grid.Column="1" Margin="25,0,0,0">
+                <Border CornerRadius="10" Background="#44FFFFFF" Padding="10" Margin="0,0,0,15" Effect="{DynamicResource DropShadow}">
+                    <StackPanel>
+                        <TextBlock Text="📰 News" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Height="130">
+                            <TextBlock x:Name="NewsText" TextWrapping="Wrap" Foreground="White" FontSize="14"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border CornerRadius="10" Background="#44FFFFFF" Padding="10" Margin="0,0,0,15" Effect="{DynamicResource DropShadow}">
+                    <StackPanel>
+                        <TextBlock Text="✨ What's New" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Height="130">
+                            <TextBlock x:Name="WhatAddedText" TextWrapping="Wrap" Foreground="White" FontSize="14"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border CornerRadius="10" Background="#44FFFFFF" Padding="10" Margin="0,0,0,15" Effect="{DynamicResource DropShadow}">
+                    <StackPanel>
+                        <TextBlock Text="📝 Patch Notes" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Height="130">
+                            <TextBlock x:Name="PatchNotesText" TextWrapping="Wrap" Foreground="White" FontSize="14"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Footer: Links -->
+            <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal"
+                        HorizontalAlignment="Center" Margin="0,20,0,0">
+                <Button Width="45" Height="45" Margin="8" Background="#5865F2" BorderThickness="0" Click="DiscordButton_Click" ToolTip="Discord">
+                    <Image Source="https://cdn-icons-png.flaticon.com/512/5968/5968756.png"/>
+                </Button>
+                <Button Width="45" Height="45" Margin="8" Background="#3498DB" BorderThickness="0" Click="WebsiteButton_Click" ToolTip="Website">
+                    <Image Source="https://cdn-icons-png.flaticon.com/512/84/84120.png"/>
+                </Button>
+                <Button Width="45" Height="45" Margin="8" Background="#333" BorderThickness="0" Click="GitHubButton_Click" ToolTip="GitHub">
+                    <Image Source="https://cdn-icons-png.flaticon.com/512/733/733553.png"/>
+                </Button>
+            </StackPanel>
+
+            <!-- Context Menu -->
+            <Grid.Resources>
+                <ContextMenu x:Key="LauncherMenu" x:Name="OptionsMenu">
+                    <MenuItem Header="Open Game Folder" Click="OpenFolderFromMenu_Click"/>
+                    <MenuItem Header="Uninstall Game" Click="UninstallFromMenu_Click" Foreground="Red"/>
+                </ContextMenu>
+                <DropShadowEffect x:Key="DropShadow" Color="Black" BlurRadius="15" ShadowDepth="5" Opacity="0.5"/>
+            </Grid.Resources>
+
+            <!-- Menu button -->
+            <Button x:Name="MenuButton" Content="⋮" Width="40" Height="40" FontSize="20"
+                    VerticalAlignment="Top" HorizontalAlignment="Right"
+                    ContextMenu="{StaticResource LauncherMenu}"
+                    Margin="0,0,0,0"/>
+        </Grid>
+
+        <!-- Loading overlay -->
+        <Border x:Name="LoadingOverlay" Visibility="Collapsed" Background="#AA000000">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="250" Height="20"/>
+                <TextBlock Text="Loading..." Foreground="White" FontSize="16"
+                           HorizontalAlignment="Center" Margin="0,15,0,0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
