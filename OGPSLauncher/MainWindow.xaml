@@ -1,0 +1,103 @@
+<Window x:Class="OGPSLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OGPS Launcher" Height="700" Width="900"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Background="{DynamicResource MaterialDesignPaper}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Верхняя панель -->
+        <Grid Grid.Row="0" Margin="0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="120"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- SCREEN NEW UPDATE -->
+            <Border Grid.Column="0" Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                <StackPanel>
+                    <Image x:Name="UpdateScreenshot" Width="160" Height="120" Stretch="UniformToFill" />
+                    <TextBlock x:Name="UpdateStatusText" Text="Проверка..." FontSize="14" Foreground="Gray" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- NEWS -->
+            <Border Grid.Column="1" Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10" Margin="10,0">
+                <StackPanel>
+                    <TextBlock Text="📰 Новости" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <TextBlock x:Name="NewsText" TextWrapping="Wrap" Foreground="Black" FontSize="14"/>
+                </StackPanel>
+            </Border>
+
+            <!-- LOGO -->
+            <Border Grid.Column="2" Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10" VerticalAlignment="Top">
+                <Image Source="pack://application:,,,/Resources/logo.png" Width="80" Height="80" />
+            </Border>
+        </Grid>
+
+        <!-- PATCH -->
+        <Border Grid.Row="1" Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,10">
+            <StackPanel>
+                <TextBlock Text="📝 Патчноуты" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock x:Name="PatchNotesText" TextWrapping="Wrap" Foreground="Black" FontSize="14"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Нижняя панель -->
+        <Grid Grid.Row="2" Margin="0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="PlayButton" Content="▶ Play" IsEnabled="False"
+                    Style="{StaticResource MaterialDesignRaisedButton}" 
+                    Click="PlayButton_Click" MinWidth="120" Background="Green" Foreground="White"/>
+
+            <Grid Grid.Column="1" Margin="10,0">
+                <Button x:Name="MenuButton" Content="⋮" 
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Width="30" Height="30" Margin="0,-20,5,0"
+                        Style="{StaticResource MaterialDesignFloatingActionMiniButton}"
+                        Click="MenuButton_Click" IsEnabled="False"/>
+                <TextBlock x:Name="StatusText" Text="Выберите папку для установки игры"
+                           HorizontalAlignment="Center" VerticalAlignment="Bottom" FontSize="14" Foreground="Gray"/>
+            </Grid>
+
+            <Button x:Name="InstallButton" Content="Установить игру" 
+                    Style="{StaticResource MaterialDesignRaisedButton}" 
+                    Click="InstallButton_Click" Margin="10" MinWidth="150"/>
+        </Grid>
+
+        <!-- Всплывающее меню -->
+        <Popup x:Name="OptionsMenu" StaysOpen="False" Placement="Bottom" PlacementTarget="{Binding ElementName=MenuButton}">
+            <Border Background="White" BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="8">
+                <StackPanel>
+                    <Button Content="Открыть папку с игрой" Click="OpenFolderFromMenu_Click" 
+                            Style="{StaticResource MaterialDesignFlatButton}" MinWidth="180" HorizontalContentAlignment="Left"/>
+                    <Button Content="Удалить всё (игра + настройки)" Click="UninstallFromMenu_Click" 
+                            Style="{StaticResource MaterialDesignFlatButton}" MinWidth="180" HorizontalContentAlignment="Left" 
+                            Foreground="Red"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- Анимация загрузки -->
+        <Border x:Name="LoadingOverlay" Visibility="Collapsed" Background="#80000000">
+            <Grid>
+                <ProgressBar IsIndeterminate="True" Width="200" Height="20" 
+                             HorizontalAlignment="Center" VerticalAlignment="Center" 
+                             Style="{StaticResource MaterialDesignCircularProgressBar}"/>
+                <TextBlock Text="Загрузка..." Foreground="White" FontSize="16" 
+                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,50,0,0"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
