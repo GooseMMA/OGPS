@@ -1,15 +1,29 @@
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
-  Определение проектов для восстановления...
-  Все проекты обновлены для восстановления.
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(89,21): error MC4005: не удается найти Style Property "CornerRadius" типа "System.Windows.Controls.Button". Строка 89 позиция 21. [C:\Users\andre\OneDrive\Рабочий стол
-\OGPSLauncher\OGPSLauncher.csproj]
-
-Ошибка сборки.
-
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(89,21): error MC4005: не удается найти Style Property "CornerRadius" типа "System.Windows.Controls.Button". Строка 89 позиция 21. [C:\Users\andre\OneDrive\Рабочий стол 
-\OGPSLauncher\OGPSLauncher.csproj]
-    Предупреждений: 0
-    Ошибок: 1
-
-Прошло времени 00:00:01.25
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
+<!-- Social Icon Button (исправлено) -->
+<Style x:Key="CircleIconButton" TargetType="Button">
+    <Setter Property="Width" Value="40"/>
+    <Setter Property="Height" Value="40"/>
+    <Setter Property="Background" Value="#2C2C2C"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Effect">
+        <Setter.Value>
+            <DropShadowEffect BlurRadius="10" ShadowDepth="0" Color="#000" Opacity="0.3"/>
+        </Setter.Value>
+    </Setter>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Button">
+                <Border x:Name="Bd"
+                        CornerRadius="20"
+                        Background="{TemplateBinding Background}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="#3D3D3D"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
