@@ -1,23 +1,238 @@
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
-  Определение проектов для восстановления...
-  Все проекты обновлены для восстановления.
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(47,17): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(70,17): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(84,21): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(89,21): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(157,13): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(200,21): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
+<Window x:Class="OGPSLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OGPS Launcher"
+        Height="700" Width="1300"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="Transparent"
+        AllowsTransparency="True">
 
-Ошибка сборки.
+    <Window.Resources>
+        <!-- Floating Card Style -->
+        <Style x:Key="FloatingCard" TargetType="Border">
+            <Setter Property="Background" Value="#1A1A1A"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#000000" BlurRadius="20" ShadowDepth="4" Opacity="0.5"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(47,17): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(70,17): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(84,21): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(89,21): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(157,13): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml.cs(200,21): error CS0103: Имя "StatusText" не существует в текущем контексте. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-    Предупреждений: 0
-    Ошибок: 6
+        <!-- Scrollable Text -->
+        <Style x:Key="ScrollableText" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="#EAEAEA"/>
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
 
-Прошло времени 00:00:03.84
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
+        <!-- Play Button with Animation -->
+        <Style x:Key="PlayButtonStyle" TargetType="Button">
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Background" Value="#28C76F"/>
+            <Setter Property="Foreground" Value="#07120A"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Height" Value="54"/>
+            <Setter Property="Width" Value="260"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="10"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform x:Name="ScaleTransform" ScaleX="1" ScaleY="1"/>
+                                </Border.RenderTransform>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#6EEAA3" BlurRadius="20" ShadowDepth="0" Opacity="0.7"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleX" Value="1.04"/>
+                                <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleY" Value="1.04"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleX" Value="0.98"/>
+                                <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleY" Value="0.98"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Social Icon Button -->
+        <Style x:Key="CircleIconButton" TargetType="Button">
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Background" Value="#2C2C2C"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="20"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="10" ShadowDepth="0" Color="#000" Opacity="0.3"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="20">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3D3D3D"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <!-- Background GIF -->
+        <Image x:Name="BackgroundImage" Stretch="UniformToFill"/>
+
+        <!-- Main Content -->
+        <Grid Margin="30">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="5*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Left: Screenshot + Play -->
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <Border Style="{StaticResource FloatingCard}" Margin="0,0,0,10">
+                    <Image x:Name="UpdateScreenshot" Height="400" Stretch="UniformToFill"/>
+                </Border>
+                <Button x:Name="MainButton"
+                        Content="▶ Play"
+                        Click="MainButton_Click"
+                        Style="{StaticResource PlayButtonStyle}"/>
+            </StackPanel>
+
+            <!-- Right: News and Updates -->
+            <Grid Grid.Column="1" Margin="20,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Style="{StaticResource FloatingCard}" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="📰 News" FontSize="20" FontWeight="Bold" Foreground="#00BFFF" Margin="0,0,0,10"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
+                            <TextBlock x:Name="NewsText" Style="{StaticResource ScrollableText}"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Style="{StaticResource FloatingCard}" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="✨ What's New" FontSize="18" FontWeight="Bold" Foreground="#9B59B6" Margin="0,0,0,5"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
+                            <TextBlock x:Name="WhatAddedText" Style="{StaticResource ScrollableText}"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2" Style="{StaticResource FloatingCard}">
+                    <StackPanel>
+                        <TextBlock Text="📝 Patch Notes" FontSize="18" FontWeight="Bold" Foreground="#F39C12" Margin="0,0,0,5"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
+                            <TextBlock x:Name="PatchNotesText" Style="{StaticResource ScrollableText}"/>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Bottom panel -->
+            <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,20,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button x:Name="MenuButton" Content="⋮"
+                        Grid.Column="1"
+                        Width="40" Height="40"
+                        Click="MenuButton_Click"
+                        Margin="10,0,10,0"/>
+
+                <ProgressBar x:Name="InstallProgressBar"
+                             Grid.Column="2"
+                             Height="10"
+                             Margin="10,0"
+                             Visibility="Collapsed"/>
+
+                <TextBlock x:Name="StatusText"
+                           Grid.Column="3"
+                           Text="Select folder to install the game"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           Foreground="#CCCCCC"
+                           Margin="10,0,0,0"/>
+            </Grid>
+
+            <!-- Social buttons -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,20,10">
+                <Button Style="{StaticResource CircleIconButton}" Click="DiscordButton_Click" Margin="5">
+                    <Image Source="pack://application:,,,/Resources/discord.png" Width="20" Height="20"/>
+                </Button>
+                <Button Style="{StaticResource CircleIconButton}" Click="WebsiteButton_Click" Margin="5">
+                    <Image Source="pack://application:,,,/Resources/web.png" Width="20" Height="20"/>
+                </Button>
+                <Button Style="{StaticResource CircleIconButton}" Click="GitHubButton_Click" Margin="5">
+                    <Image Source="pack://application:,,,/Resources/github.png" Width="20" Height="20"/>
+                </Button>
+            </StackPanel>
+
+            <!-- Loading overlay -->
+            <Border x:Name="LoadingOverlay" Visibility="Collapsed" Background="#80000000">
+                <Grid>
+                    <ProgressBar IsIndeterminate="True"
+                                 Width="200" Height="20"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"/>
+                    <TextBlock Text="Loading..."
+                               Foreground="White"
+                               FontSize="16"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Top"
+                               Margin="0,50,0,0"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
