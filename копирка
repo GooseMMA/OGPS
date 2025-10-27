@@ -1,15 +1,50 @@
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
-  Определение проектов для восстановления...
-  Все проекты обновлены для восстановления.
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(52,41): error MC4106: не удается разрешить свойство шаблона "ScaleX)". Проверьте, что тип-владелец - TargetType объекта Style, или с помощью синтаксиса Class.Property 
-задайте данное свойство. Строка 52 позиция 41. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-
-Ошибка сборки.
-
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(52,41): error MC4106: не удается разрешить свойство шаблона "ScaleX)". Проверьте, что тип-владелец - TargetType объекта Style, или с помощью синтаксиса Class.Property  
-задайте данное свойство. Строка 52 позиция 41. [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-    Предупреждений: 0
-    Ошибок: 1
-
-Прошло времени 00:00:01.65
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
+<Style x:Key="PlayButtonStyle" TargetType="Button">
+    <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+    <Setter Property="RenderTransform">
+        <Setter.Value>
+            <ScaleTransform ScaleX="1" ScaleY="1"/>
+        </Setter.Value>
+    </Setter>
+    <Setter Property="Background" Value="#28C76F"/>
+    <Setter Property="Foreground" Value="#07120A"/>
+    <Setter Property="FontWeight" Value="Bold"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Height" Value="54"/>
+    <Setter Property="Width" Value="260"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="Button">
+                <Grid>
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="10"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform x:Name="ScaleTransform" ScaleX="1" ScaleY="1"/>
+                        </Border.RenderTransform>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </Grid>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#6EEAA3" BlurRadius="20" ShadowDepth="0" Opacity="0.7"/>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleX" Value="1.04"/>
+                        <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleY" Value="1.04"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleX" Value="0.98"/>
+                        <Setter TargetName="ScaleTransform" Property="ScaleTransform.ScaleY" Value="0.98"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Opacity" Value="0.6"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+</Style>
