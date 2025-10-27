@@ -1,15 +1,40 @@
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> dotnet build
-  Определение проектов для восстановления...
-  Все проекты обновлены для восстановления.
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(113,14): error MC3088: элементы свойств не могут находиться в середине содержимого элемента. Они должны быть размещены до или после содержимого. Строка 113 позиция 14.
- [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-
-Ошибка сборки.
-
-C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\MainWindow.xaml(113,14): error MC3088: элементы свойств не могут находиться в середине содержимого элемента. Они должны быть размещены до или после содержимого. Строка 113 позиция 14. 
- [C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher\OGPSLauncher.csproj]
-    Предупреждений: 0
-    Ошибок: 1
-
-Прошло времени 00:00:01.24
-PS C:\Users\andre\OneDrive\Рабочий стол\OGPSLauncher> 
+<!-- Menu button -->
+<Button x:Name="MenuButton"
+        Width="40" Height="40"
+        FontSize="20"
+        VerticalAlignment="Top"
+        HorizontalAlignment="Right"
+        ContextMenu="{StaticResource LauncherMenu}"
+        Margin="0,0,0,0"
+        Content="⋮">
+    <Button.Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#1AFFFFFF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="20"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#33FFFFFF"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect BlurRadius="8" Color="#AAFFFFFF" ShadowDepth="0"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Button.Style>
+</Button>
