@@ -1,40 +1,164 @@
-<!-- Menu button -->
-<Button x:Name="MenuButton"
-        Width="40" Height="40"
-        FontSize="20"
-        VerticalAlignment="Top"
-        HorizontalAlignment="Right"
-        ContextMenu="{StaticResource LauncherMenu}"
-        Margin="0,0,0,0"
-        Content="⋮">
-    <Button.Style>
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="#1AFFFFFF"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="20"
-                                SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#33FFFFFF"/>
-                    <Setter Property="Effect">
+<Window x:Class="OGPSLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OGPS Launcher"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Height="720" Width="1280"
+        Background="Black">
+
+    <Grid>
+        <!-- Background GIF -->
+        <Image x:Name="BackgroundImage"
+               Stretch="Fill"
+               Panel.ZIndex="0"
+               Opacity="0.25"/>
+
+        <!-- Semi-transparent floating panels -->
+        <Grid Margin="30">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Section (Screenshot + Play Button) -->
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <Border Background="#22FFFFFF"
+                        CornerRadius="20"
+                        Padding="10"
+                        Margin="0,0,0,10"
+                        Effect="{DynamicResource DropShadowEffect}">
+                    <Image x:Name="UpdateScreenshot"
+                           Height="400"
+                           Stretch="UniformToFill"/>
+                </Border>
+
+                <Button x:Name="MainButton"
+                        Content="▶ PLAY"
+                        Height="60"
+                        FontSize="20"
+                        FontWeight="Bold"
+                        Cursor="Hand"
+                        Background="#33FFFFFF"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Margin="0,10,0,0">
+                    <Button.Triggers>
+                        <EventTrigger RoutedEvent="Button.MouseEnter">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <ColorAnimation Storyboard.TargetProperty="(Button.Background).(SolidColorBrush.Color)"
+                                                    To="#66FFFFFF"
+                                                    Duration="0:0:0.2"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                        <EventTrigger RoutedEvent="Button.MouseLeave">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <ColorAnimation Storyboard.TargetProperty="(Button.Background).(SolidColorBrush.Color)"
+                                                    To="#33FFFFFF"
+                                                    Duration="0:0:0.2"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Button.Triggers>
+                </Button>
+
+                <ProgressBar x:Name="InstallProgressBar"
+                             Visibility="Collapsed"
+                             Height="10"
+                             Margin="0,15,0,0"/>
+                <TextBlock x:Name="StatusText"
+                           Text="Game not installed"
+                           Foreground="White"
+                           Margin="0,5,0,0"
+                           FontSize="14"
+                           TextAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Right Section (News & Patch Notes) -->
+            <StackPanel Grid.Column="1" Background="#22FFFFFF" Padding="15" CornerRadius="20">
+                <ScrollViewer Height="200">
+                    <TextBlock x:Name="NewsText"
+                               Text="Loading news..."
+                               Foreground="White"
+                               TextWrapping="Wrap"/>
+                </ScrollViewer>
+
+                <ScrollViewer Height="200" Margin="0,10,0,0">
+                    <TextBlock x:Name="WhatAddedText"
+                               Text="Loading what's new..."
+                               Foreground="White"
+                               TextWrapping="Wrap"/>
+                </ScrollViewer>
+
+                <ScrollViewer Height="200" Margin="0,10,0,0">
+                    <TextBlock x:Name="PatchNotesText"
+                               Text="Loading patch notes..."
+                               Foreground="White"
+                               TextWrapping="Wrap"/>
+                </ScrollViewer>
+            </StackPanel>
+        </Grid>
+
+        <!-- Top Right Menu -->
+        <Button x:Name="MenuButton"
+                Width="40"
+                Height="40"
+                FontSize="20"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Right"
+                Margin="20"
+                Cursor="Hand"
+                Content="⋮"
+                Foreground="White"
+                Background="#1AFFFFFF"
+                BorderThickness="0">
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Template">
                         <Setter.Value>
-                            <DropShadowEffect BlurRadius="8" Color="#AAFFFFFF" ShadowDepth="0"/>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="20">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
                         </Setter.Value>
                     </Setter>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-    </Button.Style>
-</Button>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#33FFFFFF"/>
+                            <Setter Property="Effect">
+                                <Setter.Value>
+                                    <DropShadowEffect BlurRadius="8" Color="#AAFFFFFF" ShadowDepth="0"/>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+        </Button>
+
+        <!-- Context Menu -->
+        <Button.ContextMenu>
+            <ContextMenu x:Name="OptionsMenu">
+                <MenuItem Header="Open game folder" Click="OpenFolderFromMenu_Click"/>
+                <MenuItem Header="Uninstall" Click="UninstallFromMenu_Click"/>
+            </ContextMenu>
+        </Button.ContextMenu>
+
+        <!-- Social Links -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20" Spacing="20">
+            <Button Width="40" Height="40" Background="#22FFFFFF" BorderThickness="0" Cursor="Hand" Click="DiscordButton_Click">
+                <Image Source="https://cdn-icons-png.flaticon.com/512/5968/5968756.png" Stretch="Uniform"/>
+            </Button>
+            <Button Width="40" Height="40" Background="#22FFFFFF" BorderThickness="0" Cursor="Hand" Click="GitHubButton_Click">
+                <Image Source="https://cdn-icons-png.flaticon.com/512/733/733553.png" Stretch="Uniform"/>
+            </Button>
+            <Button Width="40" Height="40" Background="#22FFFFFF" BorderThickness="0" Cursor="Hand" Click="WebsiteButton_Click">
+                <Image Source="https://cdn-icons-png.flaticon.com/512/841/841364.png" Stretch="Uniform"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
