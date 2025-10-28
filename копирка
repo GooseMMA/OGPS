@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog
 from PIL import Image, ImageTk
 import json
 import os
@@ -14,24 +14,21 @@ class SpriteEditor(tk.Tk):
         self.canvas = tk.Canvas(self, bg="#1f1f1f", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
 
-        self.sprites = []   # [{id, path, x, y, img, pil, is_bg}]
+        self.sprites = []  # {id, path, x, y, width, height, pil, img, is_bg}
         self.selected = None
-        self.drag_data = {"x": 0, "y": 0}
+        self.drag_data = {"x":0, "y":0}
         self.selection_rect = None
-        self.background_id = None  # ID фона
+        self.background_id = None
 
-        # вывести горячие клавиши
         print("""
-🎮 Горячие клавиши редактора:
------------------------------------------
-W / A / S / D  - двигать спрайт
-Q / E          - поднять / опустить слой
-R / F          - увеличить / уменьшить размер
-C              - выровнять по центру
-Z / X          - сохранить / загрузить сцену
-Delete         - удалить спрайт
-Мышь (Drag)    - перемещать элементы
------------------------------------------
+🎮 Горячие клавиши:
+W/A/S/D - двигать
+Q/E - поднять/опустить слой
+R/F - увеличить/уменьшить размер
+C - центрировать
+Z/X - сохранить/загрузить сцену
+Delete - удалить
+Drag мышью - перемещать
 """)
 
         # события
@@ -41,10 +38,10 @@ Delete         - удалить спрайт
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
 
         # горячие клавиши
-        self.bind("w", lambda e: self.move_selected(0, -5))
-        self.bind("s", lambda e: self.move_selected(0, 5))
-        self.bind("a", lambda e: self.move_selected(-5, 0))
-        self.bind("d", lambda e: self.move_selected(5, 0))
+        self.bind("w", lambda e: self.move_selected(0,-5))
+        self.bind("s", lambda e: self.move_selected(0,5))
+        self.bind("a", lambda e: self.move_selected(-5,0))
+        self.bind("d", lambda e: self.move_selected(5,0))
         self.bind("q", lambda e: self.raise_sprite())
         self.bind("e", lambda e: self.lower_sprite())
         self.bind("r", lambda e: self.resize_selected(1.1))
@@ -64,121 +61,123 @@ Delete         - удалить спрайт
         self.config(menu=menu)
 
     # ==================== Сетка ====================
-
     def draw_grid(self, event=None):
         self.canvas.delete("grid")
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
-        for x in range(0, w, self.grid_size):
-            self.canvas.create_line(x, 0, x, h, fill="#333333", tags="grid")
-        for y in range(0, h, self.grid_size):
-            self.canvas.create_line(0, y, w, y, fill="#333333", tags="grid")
+        w,h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        for x in range(0,w,self.grid_size):
+            self.canvas.create_line(x,0,x,h,fill="#333333",tags="grid")
+        for y in range(0,h,self.grid_size):
+            self.canvas.create_line(0,y,w,y,fill="#333333",tags="grid")
+        # центральные линии
+        self.canvas.create_line(w//2,0,w//2,h,fill="#007acc",dash=(4,2),tags="grid")
+        self.canvas.create_line(0,h//2,w,h//2,fill="#007acc",dash=(4,2),tags="grid")
 
-        cx, cy = w // 2, h // 2
-        self.canvas.create_line(cx, 0, cx, h, fill="#007acc", width=1, dash=(4, 2), tags="grid")
-        self.canvas.create_line(0, cy, w, cy, fill="#007acc", width=1, dash=(4, 2), tags="grid")
-
-    # ==================== Работа со спрайтами ====================
-
+    # ==================== Добавление спрайта ====================
     def add_sprite(self):
-        path = filedialog.askopenfilename(
-            filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.gif")]
-        )
+        path = filedialog.askopenfilename(filetypes=[("Image files","*.png;*.jpg;*.jpeg;*.gif")])
         if not path:
             return
+        pil_img = Image.open(path)
 
-        img = Image.open(path)
-        tk_img = ImageTk.PhotoImage(img)
-
-        # если первый спрайт — это фон
+        # если первый спрайт — фон
         if not self.sprites:
-            sprite_id = self.canvas.create_image(0, 0, image=tk_img, anchor="nw")
-            self.background_id = sprite_id
-            w, h = img.size
+            # спросить размер у пользователя
+            w = simpledialog.askinteger("Фон ширина","Введите ширину фона:",initialvalue=pil_img.width)
+            h = simpledialog.askinteger("Фон высота","Введите высоту фона:",initialvalue=pil_img.height)
+            pil_img = pil_img.resize((w,h),Image.Resampling.LANCZOS)
+            tk_img = ImageTk.PhotoImage(pil_img)
+            sprite_id = self.canvas.create_image(0,0,image=tk_img,anchor="nw")
+            self.canvas.config(width=w,height=h)
             self.geometry(f"{w}x{h}")
-            self.canvas.config(width=w, height=h)
-            self.draw_grid()
+            self.background_id = sprite_id
             self.sprites.append({
                 "id": sprite_id,
                 "path": path,
                 "x": 0,
                 "y": 0,
+                "width": w,
+                "height": h,
+                "pil": pil_img,
                 "img": tk_img,
-                "pil": img,
                 "is_bg": True
             })
-            print(f"✅ Фон установлен ({w}x{h})")
+            print(f"✅ Фон добавлен с размером {w}x{h}")
         else:
-            sprite_id = self.canvas.create_image(100, 100, image=tk_img, anchor="nw")
+            # остальные элементы
+            tk_img = ImageTk.PhotoImage(pil_img)
+            sprite_id = self.canvas.create_image(100,100,image=tk_img,anchor="nw")
             self.sprites.append({
                 "id": sprite_id,
                 "path": path,
                 "x": 100,
                 "y": 100,
+                "width": pil_img.width,
+                "height": pil_img.height,
+                "pil": pil_img,
                 "img": tk_img,
-                "pil": img,
                 "is_bg": False
             })
             self.select_sprite_by_id(sprite_id)
 
-    def select_sprite_by_id(self, sprite_id):
-        if sprite_id == self.background_id:
+    # ==================== Выделение ====================
+    def select_sprite_by_id(self,sprite_id):
+        if sprite_id==self.background_id:
             return
         self.selected = sprite_id
         self.canvas.tag_raise(sprite_id)
         self.update_selection_rect()
 
-    def on_click(self, event):
-        items = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
+    def on_click(self,event):
+        items = self.canvas.find_overlapping(event.x,event.y,event.x,event.y)
         if not items:
             self.clear_selection()
             return
         top = items[-1]
-        if top == self.background_id:
+        if top==self.background_id:
             return
-        self.selected = top
+        self.selected=top
         self.canvas.tag_raise(top)
         self.update_selection_rect()
-        self.drag_data["x"] = event.x
-        self.drag_data["y"] = event.y
+        self.drag_data["x"]=event.x
+        self.drag_data["y"]=event.y
 
-    def on_drag(self, event):
+    def on_drag(self,event):
         if self.selected:
             dx = event.x - self.drag_data["x"]
             dy = event.y - self.drag_data["y"]
-            self.canvas.move(self.selected, dx, dy)
+            self.canvas.move(self.selected,dx,dy)
             for s in self.sprites:
-                if s["id"] == self.selected:
-                    s["x"] += dx
-                    s["y"] += dy
+                if s["id"]==self.selected:
+                    s["x"]+=dx
+                    s["y"]+=dy
                     break
-            self.drag_data["x"], self.drag_data["y"] = event.x, event.y
+            self.drag_data["x"],self.drag_data["y"]=event.x,event.y
             self.update_selection_rect()
 
-    def on_release(self, event):
-        self.drag_data = {"x": 0, "y": 0}
+    def on_release(self,event):
+        self.drag_data={"x":0,"y":0}
 
     # ==================== Манипуляции ====================
-
-    def move_selected(self, dx, dy):
+    def move_selected(self,dx,dy):
         if self.selected:
-            self.canvas.move(self.selected, dx, dy)
+            self.canvas.move(self.selected,dx,dy)
             for s in self.sprites:
-                if s["id"] == self.selected:
-                    s["x"] += dx
-                    s["y"] += dy
+                if s["id"]==self.selected:
+                    s["x"]+=dx
+                    s["y"]+=dy
             self.update_selection_rect()
 
-    def resize_selected(self, scale):
+    def resize_selected(self,scale):
         if not self.selected:
             return
         for s in self.sprites:
-            if s["id"] == self.selected and not s["is_bg"]:
-                w, h = s["pil"].size
-                new_size = (int(w * scale), int(h * scale))
-                s["pil"] = s["pil"].resize(new_size, Image.Resampling.LANCZOS)
-                s["img"] = ImageTk.PhotoImage(s["pil"])
-                self.canvas.itemconfig(s["id"], image=s["img"])
+            if s["id"]==self.selected and not s["is_bg"]:
+                w,h = s["pil"].size
+                nw,nh = int(w*scale), int(h*scale)
+                s["pil"] = s["pil"].resize((nw,nh),Image.Resampling.LANCZOS)
+                s["img"]=ImageTk.PhotoImage(s["pil"])
+                s["width"],s["height"]=nw,nh
+                self.canvas.itemconfig(s["id"],image=s["img"])
                 self.update_selection_rect()
                 break
 
@@ -195,104 +194,95 @@ Delete         - удалить спрайт
     def delete_sprite(self):
         if self.selected:
             self.canvas.delete(self.selected)
-            self.sprites = [s for s in self.sprites if s["id"] != self.selected]
+            self.sprites=[s for s in self.sprites if s["id"]!=self.selected]
             self.clear_selection()
 
     def reorder_sprites(self):
         ordered = self.canvas.find_all()
-        id_to_index = {sprite_id: i for i, sprite_id in enumerate(ordered)}
-        self.sprites.sort(key=lambda s: id_to_index[s["id"]])
-
-    # ==================== Выделение ====================
+        id_to_index={sprite_id:i for i,sprite_id in enumerate(ordered)}
+        self.sprites.sort(key=lambda s:id_to_index[s["id"]])
 
     def update_selection_rect(self):
         if not self.selected:
             return
-        bbox = self.canvas.bbox(self.selected)
+        bbox=self.canvas.bbox(self.selected)
         if not bbox:
             return
-        x1, y1, x2, y2 = bbox
+        x1,y1,x2,y2=bbox
         if self.selection_rect:
-            self.canvas.coords(self.selection_rect, x1-2, y1-2, x2+2, y2+2)
+            self.canvas.coords(self.selection_rect,x1-2,y1-2,x2+2,y2+2)
         else:
             self.selection_rect = self.canvas.create_rectangle(
-                x1-2, y1-2, x2+2, y2+2,
-                outline="#00bfff", width=2, dash=(4, 2)
+                x1-2,y1-2,x2+2,y2+2,outline="#00bfff",width=2,dash=(4,2)
             )
-            self.canvas.tag_lower(self.selection_rect, self.selected)
+            self.canvas.tag_lower(self.selection_rect,self.selected)
 
     def clear_selection(self):
         if self.selection_rect:
             self.canvas.delete(self.selection_rect)
-            self.selection_rect = None
-        self.selected = None
-
-    # ==================== Центрирование ====================
+            self.selection_rect=None
+        self.selected=None
 
     def align_to_center(self):
         if not self.selected:
             return
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
-        bbox = self.canvas.bbox(self.selected)
-        if not bbox:
-            return
-        sw = bbox[2] - bbox[0]
-        sh = bbox[3] - bbox[1]
-        cx, cy = (w - sw) // 2, (h - sh) // 2
+        w,h = self.canvas.winfo_width(), self.canvas.winfo_height()
         for s in self.sprites:
-            if s["id"] == self.selected:
-                dx, dy = cx - s["x"], cy - s["y"]
-                self.canvas.move(self.selected, dx, dy)
-                s["x"], s["y"] = cx, cy
+            if s["id"]==self.selected:
+                nx = (w - s["width"])//2
+                ny = (h - s["height"])//2
+                dx,dy = nx - s["x"], ny - s["y"]
+                self.canvas.move(self.selected,dx,dy)
+                s["x"],s["y"]=nx,ny
                 break
         self.update_selection_rect()
 
-    # ==================== Сохранение / загрузка ====================
-
+    # ==================== Сохранение / Загрузка ====================
     def save_scene(self):
-        data = []
+        data=[]
         for s in self.sprites:
             data.append({
-                "path": os.path.basename(s["path"]),
-                "x": s["x"],
-                "y": s["y"]
+                "path":os.path.basename(s["path"]),
+                "x":s["x"],
+                "y":s["y"],
+                "width":s["width"],
+                "height":s["height"],
+                "is_bg":s["is_bg"]
             })
-        with open("scene.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        with open("scene.json","w",encoding="utf-8") as f:
+            json.dump(data,f,indent=4,ensure_ascii=False)
         print("✅ Сцена сохранена в scene.json")
 
     def load_scene(self):
-        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
-        if not path:
-            return
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
+        path=filedialog.askopenfilename(filetypes=[("JSON files","*.json")])
+        if not path: return
+        with open(path,"r",encoding="utf-8") as f:
+            data=json.load(f)
         self.canvas.delete("all")
         self.sprites.clear()
-        self.selection_rect = None
-        self.background_id = None
+        self.selection_rect=None
+        self.background_id=None
         self.draw_grid()
-
-        for i, item in enumerate(data):
+        for i,item in enumerate(data):
             if not os.path.exists(item["path"]):
                 continue
-            img = Image.open(item["path"])
-            tk_img = ImageTk.PhotoImage(img)
-            sprite_id = self.canvas.create_image(item["x"], item["y"], image=tk_img, anchor="nw")
+            pil_img = Image.open(item["path"]).resize((item["width"],item["height"]),Image.Resampling.LANCZOS)
+            tk_img = ImageTk.PhotoImage(pil_img)
+            sprite_id = self.canvas.create_image(item["x"],item["y"],image=tk_img,anchor="nw")
             self.sprites.append({
-                "id": sprite_id,
-                "path": item["path"],
-                "x": item["x"],
-                "y": item["y"],
-                "img": tk_img,
-                "pil": img,
-                "is_bg": i == 0
+                "id":sprite_id,
+                "path":item["path"],
+                "x":item["x"],
+                "y":item["y"],
+                "width":item["width"],
+                "height":item["height"],
+                "pil":pil_img,
+                "img":tk_img,
+                "is_bg":item["is_bg"]
             })
-            if i == 0:
-                self.background_id = sprite_id
+            if i==0:
+                self.background_id=sprite_id
         print("✅ Сцена загружена")
 
-if __name__ == "__main__":
+if __name__=="__main__":
     SpriteEditor().mainloop()
