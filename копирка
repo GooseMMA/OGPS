@@ -8,32 +8,53 @@ class SpriteEditor(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Launcher Sprite Editor")
-        self.geometry("1200x700")
         self.configure(bg="#2b2b2b")
 
-        self.grid_size = 50  # шаг сетки
+        self.grid_size = 50
         self.canvas = tk.Canvas(self, bg="#1f1f1f", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
 
-        self.sprites = []  # [{id, path, x, y, img}]
+        self.sprites = []   # [{id, path, x, y, img, pil, is_bg}]
         self.selected = None
         self.drag_data = {"x": 0, "y": 0}
         self.selection_rect = None
+        self.background_id = None  # ID фона
 
+        # вывести горячие клавиши
+        print("""
+🎮 Горячие клавиши редактора:
+-----------------------------------------
+W / A / S / D  - двигать спрайт
+Q / E          - поднять / опустить слой
+R / F          - увеличить / уменьшить размер
+C              - выровнять по центру
+Z / X          - сохранить / загрузить сцену
+Delete         - удалить спрайт
+Мышь (Drag)    - перемещать элементы
+-----------------------------------------
+""")
+
+        # события
         self.canvas.bind("<Configure>", self.draw_grid)
         self.canvas.bind("<Button-1>", self.on_click)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
 
-        self.bind("<Up>", lambda e: self.move_selected(0, -5))
-        self.bind("<Down>", lambda e: self.move_selected(0, 5))
-        self.bind("<Left>", lambda e: self.move_selected(-5, 0))
-        self.bind("<Right>", lambda e: self.move_selected(5, 0))
-        self.bind("<Prior>", lambda e: self.raise_sprite())   # PgUp
-        self.bind("<Next>", lambda e: self.lower_sprite())    # PgDn
+        # горячие клавиши
+        self.bind("w", lambda e: self.move_selected(0, -5))
+        self.bind("s", lambda e: self.move_selected(0, 5))
+        self.bind("a", lambda e: self.move_selected(-5, 0))
+        self.bind("d", lambda e: self.move_selected(5, 0))
+        self.bind("q", lambda e: self.raise_sprite())
+        self.bind("e", lambda e: self.lower_sprite())
+        self.bind("r", lambda e: self.resize_selected(1.1))
+        self.bind("f", lambda e: self.resize_selected(0.9))
+        self.bind("c", lambda e: self.align_to_center())
+        self.bind("z", lambda e: self.save_scene())
+        self.bind("x", lambda e: self.load_scene())
         self.bind("<Delete>", lambda e: self.delete_sprite())
-        self.bind("c", lambda e: self.align_to_center())      # C - выровнять по центру
 
+        # меню
         menu = tk.Menu(self)
         file_menu = tk.Menu(menu, tearoff=0)
         file_menu.add_command(label="Добавить изображение", command=self.add_sprite)
@@ -48,19 +69,14 @@ class SpriteEditor(tk.Tk):
         self.canvas.delete("grid")
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
-
-        # Вертикальные линии
         for x in range(0, w, self.grid_size):
             self.canvas.create_line(x, 0, x, h, fill="#333333", tags="grid")
-        # Горизонтальные линии
         for y in range(0, h, self.grid_size):
             self.canvas.create_line(0, y, w, y, fill="#333333", tags="grid")
 
-        # Центральные линии
-        center_x = w // 2
-        center_y = h // 2
-        self.canvas.create_line(center_x, 0, center_x, h, fill="#007acc", width=1, dash=(4, 2), tags="grid")
-        self.canvas.create_line(0, center_y, w, center_y, fill="#007acc", width=1, dash=(4, 2), tags="grid")
+        cx, cy = w // 2, h // 2
+        self.canvas.create_line(cx, 0, cx, h, fill="#007acc", width=1, dash=(4, 2), tags="grid")
+        self.canvas.create_line(0, cy, w, cy, fill="#007acc", width=1, dash=(4, 2), tags="grid")
 
     # ==================== Работа со спрайтами ====================
 
@@ -73,17 +89,41 @@ class SpriteEditor(tk.Tk):
 
         img = Image.open(path)
         tk_img = ImageTk.PhotoImage(img)
-        sprite_id = self.canvas.create_image(100, 100, image=tk_img, anchor="nw")
-        self.sprites.append({
-            "id": sprite_id,
-            "path": path,
-            "x": 100,
-            "y": 100,
-            "img": tk_img
-        })
-        self.select_sprite_by_id(sprite_id)
+
+        # если первый спрайт — это фон
+        if not self.sprites:
+            sprite_id = self.canvas.create_image(0, 0, image=tk_img, anchor="nw")
+            self.background_id = sprite_id
+            w, h = img.size
+            self.geometry(f"{w}x{h}")
+            self.canvas.config(width=w, height=h)
+            self.draw_grid()
+            self.sprites.append({
+                "id": sprite_id,
+                "path": path,
+                "x": 0,
+                "y": 0,
+                "img": tk_img,
+                "pil": img,
+                "is_bg": True
+            })
+            print(f"✅ Фон установлен ({w}x{h})")
+        else:
+            sprite_id = self.canvas.create_image(100, 100, image=tk_img, anchor="nw")
+            self.sprites.append({
+                "id": sprite_id,
+                "path": path,
+                "x": 100,
+                "y": 100,
+                "img": tk_img,
+                "pil": img,
+                "is_bg": False
+            })
+            self.select_sprite_by_id(sprite_id)
 
     def select_sprite_by_id(self, sprite_id):
+        if sprite_id == self.background_id:
+            return
         self.selected = sprite_id
         self.canvas.tag_raise(sprite_id)
         self.update_selection_rect()
@@ -93,8 +133,11 @@ class SpriteEditor(tk.Tk):
         if not items:
             self.clear_selection()
             return
-        self.selected = items[-1]
-        self.canvas.tag_raise(self.selected)
+        top = items[-1]
+        if top == self.background_id:
+            return
+        self.selected = top
+        self.canvas.tag_raise(top)
         self.update_selection_rect()
         self.drag_data["x"] = event.x
         self.drag_data["y"] = event.y
@@ -109,12 +152,13 @@ class SpriteEditor(tk.Tk):
                     s["x"] += dx
                     s["y"] += dy
                     break
-            self.drag_data["x"] = event.x
-            self.drag_data["y"] = event.y
+            self.drag_data["x"], self.drag_data["y"] = event.x, event.y
             self.update_selection_rect()
 
     def on_release(self, event):
         self.drag_data = {"x": 0, "y": 0}
+
+    # ==================== Манипуляции ====================
 
     def move_selected(self, dx, dy):
         if self.selected:
@@ -124,6 +168,19 @@ class SpriteEditor(tk.Tk):
                     s["x"] += dx
                     s["y"] += dy
             self.update_selection_rect()
+
+    def resize_selected(self, scale):
+        if not self.selected:
+            return
+        for s in self.sprites:
+            if s["id"] == self.selected and not s["is_bg"]:
+                w, h = s["pil"].size
+                new_size = (int(w * scale), int(h * scale))
+                s["pil"] = s["pil"].resize(new_size, Image.Resampling.LANCZOS)
+                s["img"] = ImageTk.PhotoImage(s["pil"])
+                self.canvas.itemconfig(s["id"], image=s["img"])
+                self.update_selection_rect()
+                break
 
     def raise_sprite(self):
         if self.selected:
@@ -139,7 +196,6 @@ class SpriteEditor(tk.Tk):
         if self.selected:
             self.canvas.delete(self.selected)
             self.sprites = [s for s in self.sprites if s["id"] != self.selected]
-            self.selected = None
             self.clear_selection()
 
     def reorder_sprites(self):
@@ -181,18 +237,14 @@ class SpriteEditor(tk.Tk):
         bbox = self.canvas.bbox(self.selected)
         if not bbox:
             return
-        sprite_w = bbox[2] - bbox[0]
-        sprite_h = bbox[3] - bbox[1]
-        center_x = (w - sprite_w) // 2
-        center_y = (h - sprite_h) // 2
-
-        # Перемещаем спрайт
+        sw = bbox[2] - bbox[0]
+        sh = bbox[3] - bbox[1]
+        cx, cy = (w - sw) // 2, (h - sh) // 2
         for s in self.sprites:
             if s["id"] == self.selected:
-                dx = center_x - s["x"]
-                dy = center_y - s["y"]
+                dx, dy = cx - s["x"], cy - s["y"]
                 self.canvas.move(self.selected, dx, dy)
-                s["x"], s["y"] = center_x, center_y
+                s["x"], s["y"] = cx, cy
                 break
         self.update_selection_rect()
 
@@ -220,9 +272,10 @@ class SpriteEditor(tk.Tk):
         self.canvas.delete("all")
         self.sprites.clear()
         self.selection_rect = None
+        self.background_id = None
         self.draw_grid()
 
-        for item in data:
+        for i, item in enumerate(data):
             if not os.path.exists(item["path"]):
                 continue
             img = Image.open(item["path"])
@@ -233,8 +286,12 @@ class SpriteEditor(tk.Tk):
                 "path": item["path"],
                 "x": item["x"],
                 "y": item["y"],
-                "img": tk_img
+                "img": tk_img,
+                "pil": img,
+                "is_bg": i == 0
             })
+            if i == 0:
+                self.background_id = sprite_id
         print("✅ Сцена загружена")
 
 if __name__ == "__main__":
