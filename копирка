@@ -22,12 +22,12 @@ class SpriteEditor(tk.Tk):
 
         print("""
 🎮 Горячие клавиши:
-W/A/S/D - двигать
+W/A/S/D - двигать спрайт
 Q/E - поднять/опустить слой
 R/F - увеличить/уменьшить размер
 C - центрировать
 Z/X - сохранить/загрузить сцену
-Delete - удалить
+Delete - удалить спрайт
 Drag мышью - перемещать
 """)
 
@@ -79,44 +79,38 @@ Drag мышью - перемещать
             return
         pil_img = Image.open(path)
 
-        # если первый спрайт — фон
-        if not self.sprites:
-            # спросить размер у пользователя
-            w = simpledialog.askinteger("Фон ширина","Введите ширину фона:",initialvalue=pil_img.width)
-            h = simpledialog.askinteger("Фон высота","Введите высоту фона:",initialvalue=pil_img.height)
-            pil_img = pil_img.resize((w,h),Image.Resampling.LANCZOS)
-            tk_img = ImageTk.PhotoImage(pil_img)
+        # спросить размер у пользователя
+        w = simpledialog.askinteger("Ширина", f"Введите ширину для {os.path.basename(path)}:", initialvalue=pil_img.width)
+        h = simpledialog.askinteger("Высота", f"Введите высоту для {os.path.basename(path)}:", initialvalue=pil_img.height)
+        pil_img = pil_img.resize((w,h), Image.Resampling.LANCZOS)
+        tk_img = ImageTk.PhotoImage(pil_img)
+
+        if not self.sprites:  # фон
             sprite_id = self.canvas.create_image(0,0,image=tk_img,anchor="nw")
+            self.background_id = sprite_id
             self.canvas.config(width=w,height=h)
             self.geometry(f"{w}x{h}")
-            self.background_id = sprite_id
-            self.sprites.append({
-                "id": sprite_id,
-                "path": path,
-                "x": 0,
-                "y": 0,
-                "width": w,
-                "height": h,
-                "pil": pil_img,
-                "img": tk_img,
-                "is_bg": True
-            })
             print(f"✅ Фон добавлен с размером {w}x{h}")
-        else:
-            # остальные элементы
-            tk_img = ImageTk.PhotoImage(pil_img)
+            is_bg = True
+            x, y = 0, 0
+        else:  # обычный спрайт
             sprite_id = self.canvas.create_image(100,100,image=tk_img,anchor="nw")
-            self.sprites.append({
-                "id": sprite_id,
-                "path": path,
-                "x": 100,
-                "y": 100,
-                "width": pil_img.width,
-                "height": pil_img.height,
-                "pil": pil_img,
-                "img": tk_img,
-                "is_bg": False
-            })
+            is_bg = False
+            x, y = 100, 100
+
+        self.sprites.append({
+            "id": sprite_id,
+            "path": path,
+            "x": x,
+            "y": y,
+            "width": w,
+            "height": h,
+            "pil": pil_img,
+            "img": tk_img,
+            "is_bg": is_bg
+        })
+
+        if not is_bg:
             self.select_sprite_by_id(sprite_id)
 
     # ==================== Выделение ====================
