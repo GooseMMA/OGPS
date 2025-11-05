@@ -1,50 +1,30 @@
-"""
-Minimal Window-Bound AutoClicker (Windows)
-- PyQt5 GUI
-- Two modes: Global click (pyautogui) or Window-bound (PostMessage to HWND)
-- Choose window by title from a dropdown
-- Record global hotkey to toggle start/stop
-- Save/load basic settings (interval, hotkey) in settings.json
-
-Dependencies:
-pip install pyqt5 pyautogui pynput
-
-IMPORTANT: Windows only (uses ctypes WinAPI).
-Use responsibly.
-"""
 import sys
-import time
 import json
+import time
 import threading
-import random
-from pathlib import Path
-
-from PyQt5 import QtWidgets, QtCore
-import pyautogui
-from pynput import keyboard as pkb
 import ctypes
 from ctypes import wintypes
+from pathlib import Path
+from PyQt5 import QtWidgets, QtCore
+from pynput import keyboard as pkb
 
-# ---------------- WinAPI helpers ----------------
+# ---------------- WinAPI setup ----------------
 user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
-
 EnumWindows = user32.EnumWindows
 EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 IsWindowVisible = user32.IsWindowVisible
 GetWindowTextW = user32.GetWindowTextW
 GetWindowTextLengthW = user32.GetWindowTextLengthW
-GetClientRect = user32.GetClientRect
+ScreenToClient = user32.ScreenToClient
 PostMessageW = user32.PostMessageW
-GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 
 WM_LBUTTONDOWN = 0x0201
 WM_LBUTTONUP = 0x0202
 
+# ---------------- Helper funcs ----------------
 def enum_windows():
-    """Return list of (hwnd, title) for visible windows with non-empty titles."""
     results = []
-    def foreach(hwnd, lParam):
+    def callback(hwnd, lParam):
         if IsWindowVisible(hwnd):
             length = GetWindowTextLengthW(hwnd)
             if length > 0:
@@ -54,331 +34,182 @@ def enum_windows():
                 if title.strip():
                     results.append((hwnd, title))
         return True
-    EnumWindows(EnumWindowsProc(foreach), 0)
+    EnumWindows(EnumWindowsProc(callback), 0)
     return results
 
-def get_client_center(hwnd):
-    """Return (x, y) coords of center inside client area (relative coords)."""
-    rect = wintypes.RECT()
-    res = GetClientRect(hwnd, ctypes.byref(rect))
-    if not res:
-        return (10, 10)
-    width = rect.right - rect.left
-    height = rect.bottom - rect.top
-    return (max(1, width // 2), max(1, height // 2))
-
 def make_lparam(x, y):
-    """lParam = (y << 16) | x (both unsigned)"""
     return (y << 16) | (x & 0xFFFF)
 
-def post_click_to_window(hwnd, x, y):
-    """Post left-button down/up at (x,y) relative to client area."""
+def post_click(hwnd, x, y):
     lparam = make_lparam(x, y)
-    # PostMessage to avoid blocking; some windows may ignore if minimized
     PostMessageW(hwnd, WM_LBUTTONDOWN, 1, lparam)
     time.sleep(0.01)
     PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
 
 # ---------------- Settings ----------------
 SETTINGS_PATH = Path("settings.json")
-DEFAULT_SETTINGS = {"interval_ms": 100, "hotkey": "", "mode": "global", "target_title": ""}
 
 def load_settings():
     if SETTINGS_PATH.exists():
         try:
             return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return DEFAULT_SETTINGS.copy()
-    return DEFAULT_SETTINGS.copy()
+        except:
+            pass
+    return {"interval_ms": 200, "hotkey": "", "target_title": "", "click_point": [0, 0]}
 
 def save_settings(s):
-    SETTINGS_PATH.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    SETTINGS_PATH.write_text(json.dumps(s, indent=2, ensure_ascii=False), encoding="utf-8")
 
-# ---------------- Clicker Thread ----------------
+# ---------------- Clicker thread ----------------
 class ClickerThread(threading.Thread):
-    def __init__(self, get_action_fn, interval_ms, jitter_ms=0):
+    def __init__(self, hwnd, point, interval):
         super().__init__(daemon=True)
-        self.get_action_fn = get_action_fn
-        self.interval_ms = interval_ms
-        self.jitter_ms = jitter_ms
+        self.hwnd = hwnd
+        self.point = point
+        self.interval = interval / 1000.0
         self._stop = threading.Event()
 
     def stop(self):
         self._stop.set()
 
-    def stopped(self):
-        return self._stop.is_set()
-
     def run(self):
         while not self._stop.is_set():
-            try:
-                action = self.get_action_fn()
-                if action:
-                    action()
-            except Exception as e:
-                # swallow to keep thread alive, but print for debug
-                print("Click action error:", e)
-            base = self.interval_ms / 1000.0
-            jitter = random.uniform(-self.jitter_ms, self.jitter_ms) / 1000.0 if self.jitter_ms > 0 else 0
-            time.sleep(max(0.001, base + jitter))
+            post_click(self.hwnd, self.point[0], self.point[1])
+            time.sleep(self.interval)
 
 # ---------------- GUI ----------------
-class MainWindow(QtWidgets.QMainWindow):
+class AutoClicker(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Minimal AutoClicker (Window-bound)")
-        self.resize(520, 320)
+        self.setWindowTitle("Window-bound AutoClicker (minimal)")
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.clicker = None
-        self.hotkey_binding = ""  # friendly string
-        self.hotkey_listener = None
+        self.hotkey = ""
+        self.hwnd = None
+        self.click_point = [0, 0]
         self.settings = load_settings()
 
-        self._build_ui()
-        self._load_settings_to_ui()
-        self._start_hotkey_listener_if_needed()
+        self.layout = QtWidgets.QVBoxLayout(self)
 
-    def _build_ui(self):
-        w = QtWidgets.QWidget()
-        self.setCentralWidget(w)
-        v = QtWidgets.QVBoxLayout(w)
-
-        # Window selection
+        # Window select
         h1 = QtWidgets.QHBoxLayout()
         self.win_combo = QtWidgets.QComboBox()
-        self.refresh_btn = QtWidgets.QPushButton("Refresh windows")
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh_windows)
-        h1.addWidget(QtWidgets.QLabel("Target window (optional):"))
+        h1.addWidget(QtWidgets.QLabel("Select window:"))
         h1.addWidget(self.win_combo)
         h1.addWidget(self.refresh_btn)
-        v.addLayout(h1)
+        self.layout.addLayout(h1)
 
-        # Mode selection
-        hmode = QtWidgets.QHBoxLayout()
-        self.mode_combo = QtWidgets.QComboBox()
-        self.mode_combo.addItems(["global", "window"])
-        hmode.addWidget(QtWidgets.QLabel("Mode:"))
-        hmode.addWidget(self.mode_combo)
-        hmode.addStretch()
-        v.addLayout(hmode)
+        # Pick point
+        h2 = QtWidgets.QHBoxLayout()
+        self.pick_btn = QtWidgets.QPushButton("Pick point")
+        self.pick_btn.clicked.connect(self.pick_point)
+        self.coord_label = QtWidgets.QLabel("X=0, Y=0")
+        h2.addWidget(self.pick_btn)
+        h2.addWidget(self.coord_label)
+        self.layout.addLayout(h2)
 
-        # Interval / jitter
-        form = QtWidgets.QFormLayout()
-        self.interval_spin = QtWidgets.QSpinBox(); self.interval_spin.setRange(1, 600000); self.interval_spin.setValue(100)
-        self.jitter_spin = QtWidgets.QSpinBox(); self.jitter_spin.setRange(0, 5000); self.jitter_spin.setValue(10)
-        form.addRow("Interval (ms):", self.interval_spin)
-        form.addRow("Jitter ± (ms):", self.jitter_spin)
-        v.addLayout(form)
+        # Interval
+        h3 = QtWidgets.QHBoxLayout()
+        self.interval_spin = QtWidgets.QSpinBox()
+        self.interval_spin.setRange(1, 10000)
+        self.interval_spin.setValue(self.settings.get("interval_ms", 200))
+        h3.addWidget(QtWidgets.QLabel("Interval (ms):"))
+        h3.addWidget(self.interval_spin)
+        self.layout.addLayout(h3)
 
-        # Hotkey record
-        hk_layout = QtWidgets.QHBoxLayout()
-        self.hotkey_label = QtWidgets.QLineEdit(); self.hotkey_label.setReadOnly(True)
+        # Hotkey
+        h4 = QtWidgets.QHBoxLayout()
+        self.hotkey_label = QtWidgets.QLineEdit()
+        self.hotkey_label.setReadOnly(True)
         self.record_hotkey_btn = QtWidgets.QPushButton("Record Hotkey")
         self.record_hotkey_btn.clicked.connect(self.record_hotkey)
-        hk_layout.addWidget(QtWidgets.QLabel("Toggle hotkey:"))
-        hk_layout.addWidget(self.hotkey_label)
-        hk_layout.addWidget(self.record_hotkey_btn)
-        v.addLayout(hk_layout)
+        h4.addWidget(QtWidgets.QLabel("Hotkey:"))
+        h4.addWidget(self.hotkey_label)
+        h4.addWidget(self.record_hotkey_btn)
+        self.layout.addLayout(h4)
 
-        # Control buttons
-        ctrl = QtWidgets.QHBoxLayout()
+        # Start / stop
         self.start_btn = QtWidgets.QPushButton("Start")
-        self.stop_btn = QtWidgets.QPushButton("Stop"); self.stop_btn.setEnabled(False)
-        self.top_cb = QtWidgets.QCheckBox("Always on top")
-        ctrl.addWidget(self.start_btn); ctrl.addWidget(self.stop_btn); ctrl.addWidget(self.top_cb)
-        v.addLayout(ctrl)
-
+        self.stop_btn = QtWidgets.QPushButton("Stop")
+        self.stop_btn.setEnabled(False)
         self.start_btn.clicked.connect(self.start_clicker)
         self.stop_btn.clicked.connect(self.stop_clicker)
-        self.top_cb.stateChanged.connect(self.toggle_always_on_top)
+        h5 = QtWidgets.QHBoxLayout()
+        h5.addWidget(self.start_btn)
+        h5.addWidget(self.stop_btn)
+        self.layout.addLayout(h5)
 
-        # Log
-        v.addWidget(QtWidgets.QLabel("Log:"))
-        self.log = QtWidgets.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(120)
-        v.addWidget(self.log)
-
-        # Footer: save settings
-        foot = QtWidgets.QHBoxLayout()
-        self.save_btn = QtWidgets.QPushButton("Save settings")
-        foot.addStretch(); foot.addWidget(self.save_btn)
-        v.addLayout(foot)
-        self.save_btn.clicked.connect(self.save_settings_from_ui)
-
-        # init window list
         self.refresh_windows()
-
-    def log_msg(self, text):
-        ts = time.strftime("%H:%M:%S")
-        self.log.appendPlainText(f"[{ts}] {text}")
+        self.load_from_settings()
+        self.start_hotkey_listener()
 
     def refresh_windows(self):
         self.win_combo.clear()
-        windows = enum_windows()
-        # put a blank option for global mode
-        self.win_combo.addItem("(none - global clicks)", 0)
-        for hwnd, title in windows:
-            # store hwnd as int
+        for hwnd, title in enum_windows():
             self.win_combo.addItem(title, int(hwnd))
-        self.log_msg("Window list refreshed")
 
-    def toggle_always_on_top(self, state):
-        self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, bool(state))
-        self.show()
+    def pick_point(self):
+        QtWidgets.QMessageBox.information(self, "Pick point", "Наведите курсор и нажмите Shift+P на точке.")
+        self.listener = pkb.Listener(on_press=self._pick_point_key)
+        self.listener.start()
+
+    def _pick_point_key(self, key):
+        if key == pkb.KeyCode.from_char('p') and any([
+            pkb.Controller().pressed_keys and pkb.Key.shift in pkb.Controller().pressed_keys
+        ]):
+            pt = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+            hwnd = self.win_combo.currentData()
+            if not hwnd:
+                return False
+            client_pt = wintypes.POINT(pt.x, pt.y)
+            ScreenToClient(hwnd, ctypes.byref(client_pt))
+            self.click_point = [client_pt.x, client_pt.y]
+            self.coord_label.setText(f"X={client_pt.x}, Y={client_pt.y}")
+            self.listener.stop()
+            return False
+        return True
 
     def record_hotkey(self):
-        self.log_msg("Recording hotkey... press a key or mouse button (Esc to cancel).")
-        self.record_hotkey_btn.setEnabled(False)
+        QtWidgets.QMessageBox.information(self, "Hotkey", "Нажмите клавишу для включения/выключения.")
         captured = {"done": False}
-
-        def on_key_press(key):
+        def on_key(key):
             if captured["done"]:
                 return False
-            try:
-                if key == pkb.Key.esc:
-                    self.log_msg("Hotkey recording canceled.")
-                    captured["done"] = True
-                    return False
-                name = key.char if hasattr(key, "char") and key.char else str(key).split(".")[-1]
-                self.hotkey_binding = f"key:{name}"
-                self.hotkey_label.setText(self.hotkey_binding)
-                self.log_msg(f"Hotkey set to {self.hotkey_binding}")
-                captured["done"] = True
-                return False
-            except Exception:
-                return False
-
-        def on_mouse_click(x, y, button, pressed):
-            if captured["done"] or not pressed:
-                return False
-            name = str(button).split(".")[-1]
-            self.hotkey_binding = f"mouse:{name}"
-            self.hotkey_label.setText(self.hotkey_binding)
-            self.log_msg(f"Hotkey set to {self.hotkey_binding}")
+            self.hotkey = str(key)
+            self.hotkey_label.setText(self.hotkey)
             captured["done"] = True
             return False
+        listener = pkb.Listener(on_press=on_key)
+        listener.start()
+        threading.Thread(target=lambda: (listener.join(), self.start_hotkey_listener()), daemon=True).start()
 
-        kl = pkb.Listener(on_press=on_key_press)
-        ml = pkb.Listener(on_click=on_mouse_click)  # type: ignore - pynput.keyboard.Listener also supports on_click via mouse listener normally
-        # but simpler: use separate mouse listener from pynput.mouse if available
-        try:
-            from pynput import mouse as pmouse
-            ml = pmouse.Listener(on_click=on_mouse_click)
-        except Exception:
-            ml = None
+    def start_hotkey_listener(self):
+        def on_press(key):
+            if str(key) == self.hotkey:
+                self.toggle_clicker()
+        listener = pkb.Listener(on_press=on_press)
+        listener.start()
 
-        kl.start()
-        if ml:
-            ml.start()
-
-        def reenable():
-            while not captured["done"]:
-                time.sleep(0.05)
-            time.sleep(0.2)
-            self.record_hotkey_btn.setEnabled(True)
-            # stop local listeners
-            try:
-                kl.stop()
-            except Exception:
-                pass
-            if ml:
-                try:
-                    ml.stop()
-                except Exception:
-                    pass
-            # restart global listener with new binding
-            self._start_hotkey_listener_if_needed()
-
-        threading.Thread(target=reenable, daemon=True).start()
-
-    def _start_hotkey_listener_if_needed(self):
-        # stop existing
-        try:
-            if self.hotkey_listener:
-                self.hotkey_listener.stop()
-        except Exception:
-            pass
-        if not self.hotkey_binding:
-            # try load from settings
-            self.hotkey_binding = self.settings.get("hotkey", "")
-            self.hotkey_label.setText(self.hotkey_binding)
-        if not self.hotkey_binding:
-            return
-
-        # listener watches keyboard and mouse and toggles
-        def on_key_press(key):
-            try:
-                if self.hotkey_binding.startswith("key:"):
-                    name = self.hotkey_binding.split(":",1)[1]
-                    pressed_name = key.char if hasattr(key, "char") and key.char else str(key).split(".")[-1]
-                    if pressed_name == name:
-                        self._toggle_start_stop()
-            except Exception:
-                pass
-
-        def on_mouse_click(x, y, button, pressed):
-            try:
-                if not pressed:
-                    return
-                if self.hotkey_binding.startswith("mouse:"):
-                    name = self.hotkey_binding.split(":",1)[1]
-                    if str(button).split(".")[-1] == name:
-                        self._toggle_start_stop()
-            except Exception:
-                pass
-
-        # combine listeners
-        kl = pkb.Listener(on_press=on_key_press)
-        try:
-            from pynput import mouse as pmouse
-            ml = pmouse.Listener(on_click=on_mouse_click)
-            ml.start()
-        except Exception:
-            ml = None
-        kl.start()
-        self.hotkey_listener = kl
-        self.log_msg("Global hotkey listener active")
-
-    def _toggle_start_stop(self):
-        # runs in listener thread: ensure UI calls go to main thread
-        QtCore.QMetaObject.invokeMethod(self, "_ui_toggle", QtCore.Qt.QueuedConnection)
-
-    @QtCore.pyqtSlot()
-    def _ui_toggle(self):
-        if self.start_btn.isEnabled():
-            self.start_clicker()
-        else:
+    def toggle_clicker(self):
+        if self.clicker:
             self.stop_clicker()
+        else:
+            self.start_clicker()
 
     def start_clicker(self):
-        if self.clicker and self.clicker.is_alive():
-            self.log_msg("Already running")
+        hwnd = self.win_combo.currentData()
+        if not hwnd or self.click_point == [0, 0]:
+            QtWidgets.QMessageBox.warning(self, "Error", "Выберите окно и точку.")
             return
-        interval = int(self.interval_spin.value())
-        jitter = int(self.jitter_spin.value())
-        mode = self.mode_combo.currentText()
-        target_hwnd = int(self.win_combo.currentData()) if self.win_combo.currentIndex() != 0 else 0
-
-        def get_action():
-            if mode == "global" or target_hwnd == 0:
-                # click at current mouse pos
-                def act():
-                    pyautogui.click()
-                return act
-            else:
-                # compute center of client area for chosen window
-                def act():
-                    try:
-                        x, y = get_client_center(target_hwnd)
-                        post_click_to_window(target_hwnd, x, y)
-                    except Exception as e:
-                        print("Window click error:", e)
-                return act
-
-        action_getter = get_action
-        self.clicker = ClickerThread(lambda: action_getter(), interval, jitter)
+        interval = self.interval_spin.value()
+        self.clicker = ClickerThread(hwnd, self.click_point, interval)
         self.clicker.start()
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self.log_msg(f"Clicker started (mode={mode})")
+        self.save_settings()
 
     def stop_clicker(self):
         if self.clicker:
@@ -386,57 +217,31 @@ class MainWindow(QtWidgets.QMainWindow):
             self.clicker = None
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.log_msg("Clicker stopped")
+        self.save_settings()
 
-    def save_settings_from_ui(self):
-        self.settings["interval_ms"] = int(self.interval_spin.value())
-        self.settings["hotkey"] = self.hotkey_binding or ""
-        self.settings["mode"] = self.mode_combo.currentText()
-        # save target title (string) if selected
-        idx = self.win_combo.currentIndex()
-        if idx > 0:
-            self.settings["target_title"] = self.win_combo.currentText()
-        else:
-            self.settings["target_title"] = ""
-        save_settings(self.settings)
-        self.log_msg("Settings saved to settings.json")
+    def save_settings(self):
+        s = {
+            "interval_ms": self.interval_spin.value(),
+            "hotkey": self.hotkey,
+            "target_title": self.win_combo.currentText(),
+            "click_point": self.click_point
+        }
+        save_settings(s)
 
-    def _load_settings_to_ui(self):
+    def load_from_settings(self):
         s = self.settings
-        self.interval_spin.setValue(int(s.get("interval_ms", 100)))
-        self.hotkey_binding = s.get("hotkey", "")
-        self.hotkey_label.setText(self.hotkey_binding)
-        mode = s.get("mode", "global")
-        self.mode_combo.setCurrentText(mode if mode in ["global", "window"] else "global")
-        # try select target by title
-        target_title = s.get("target_title", "")
-        if target_title:
-            # refresh windows first
-            self.refresh_windows()
-            idx = self.win_combo.findText(target_title)
-            if idx >= 0:
-                self.win_combo.setCurrentIndex(idx)
-
-    # override closeEvent to stop listener threads
-    def closeEvent(self, event):
-        try:
-            if self.hotkey_listener:
-                self.hotkey_listener.stop()
-        except Exception:
-            pass
-        try:
-            if self.clicker:
-                self.clicker.stop()
-        except Exception:
-            pass
-        event.accept()
+        title = s.get("target_title", "")
+        idx = self.win_combo.findText(title)
+        if idx >= 0:
+            self.win_combo.setCurrentIndex(idx)
+        self.hotkey = s.get("hotkey", "")
+        self.hotkey_label.setText(self.hotkey)
+        self.click_point = s.get("click_point", [0, 0])
+        self.coord_label.setText(f"X={self.click_point[0]}, Y={self.click_point[1]}")
 
 # ---------------- Run ----------------
-def main():
+if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    w = MainWindow()
+    w = AutoClicker()
     w.show()
     sys.exit(app.exec_())
-
-if __name__ == "__main__":
-    main()
