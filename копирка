@@ -1,28 +1,21 @@
+# gamehelper_autoclicker_v2.py
 """
-Window-bound AutoClicker (minimal, Windows)
-- Always-on-top GUI (PyQt5)
-- Choose target window by title
-- Pick click point by clicking on screen (no extra window): the app temporarily becomes click-through
-- Record global hotkey (keyboard or mouse, including side buttons)
-- Start/Stop with UI or hotkey
-- Uses WinAPI PostMessage to send left-click to target window client coordinates
-- Saves settings to settings.json
-
-Dependencies:
-pip install pyqt5 pynput
-
-Windows only.
-Use responsibly.
+GameHelper AutoClicker v2 (single-file prototype)
+- Dark theme
+- Hamburger menu: Main / Window Autoclicker / Simple Autoclicker
+- Window mode: pick point by clicking on screen (app becomes click-through),
+  refresh windows button in GUI, save/load/delete configs
+- Simple mode: click at cursor pos
+- Global hotkey record (keyboard or mouse, includes side buttons)
+- Configs stored in %APPDATA%/GameHelperConfigs/{window,simple}/
+Windows only. Use responsibly.
+Dependencies: pyqt5, pynput, pyautogui
 """
-import sys
-import json
-import time
-import threading
-import ctypes
+import os, sys, json, time, threading, ctypes
 from ctypes import wintypes
 from pathlib import Path
-
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
+import pyautogui
 from pynput import mouse as pynput_mouse, keyboard as pynput_keyboard
 
 # ---------------- WinAPI helpers ----------------
@@ -47,38 +40,37 @@ WM_LBUTTONUP = 0x0202
 
 def enum_windows():
     results = []
-    def callback(hwnd, lParam):
+    def cb(hwnd, lParam):
         if IsWindowVisible(hwnd):
             length = GetWindowTextLengthW(hwnd)
             if length > 0:
-                buff = ctypes.create_unicode_buffer(length + 1)
-                GetWindowTextW(hwnd, buff, length + 1)
-                title = buff.value
+                buf = ctypes.create_unicode_buffer(length + 1)
+                GetWindowTextW(hwnd, buf, length + 1)
+                title = buf.value
                 if title.strip():
                     results.append((int(hwnd), title))
         return True
-    EnumWindows(EnumWindowsProc(callback), 0)
+    EnumWindows(EnumWindowsProc(cb), 0)
     return results
 
 def make_lparam(x, y):
     return (y << 16) | (x & 0xFFFF)
 
 def post_left_click(hwnd, x, y):
-    """Post left click (down + up) to client coords (x,y)"""
-    lparam = make_lparam(x, y)
-    PostMessageW(HWND(hwnd), WM_LBUTTONDOWN, 1, lparam)
-    # small pause
-    time.sleep(0.01)
-    PostMessageW(HWND(hwnd), WM_LBUTTONUP, 0, lparam)
+    try:
+        lparam = make_lparam(x, y)
+        PostMessageW(HWND(hwnd), WM_LBUTTONDOWN, 1, lparam)
+        time.sleep(0.01)
+        PostMessageW(HWND(hwnd), WM_LBUTTONUP, 0, lparam)
+    except Exception as e:
+        print("post_left_click error:", e)
 
 def screen_to_client(hwnd, sx, sy):
-    """Convert screen coords to client coords (returns x,y)"""
     pt = wintypes.POINT(sx, sy)
     ScreenToClient(HWND(hwnd), ctypes.byref(pt))
     return (pt.x, pt.y)
 
-def make_window_clickthrough(hwnd, enable=True):
-    """Set or remove WS_EX_TRANSPARENT so window becomes click-through."""
+def set_clickthrough(hwnd, enable=True):
     gwl = GetWindowLongW(HWND(hwnd), GWL_EXSTYLE)
     if enable:
         new = gwl | WS_EX_TRANSPARENT | WS_EX_LAYERED
@@ -86,23 +78,23 @@ def make_window_clickthrough(hwnd, enable=True):
         new = gwl & ~WS_EX_TRANSPARENT
     SetWindowLongW(HWND(hwnd), GWL_EXSTYLE, new)
 
-# ---------------- Settings ----------------
-SETTINGS_PATH = Path("settings.json")
-DEFAULT_SETTINGS = {"interval_ms": 200, "hotkey": "", "target_title": "", "click_point": [0,0]}
+# ---------------- Config paths ----------------
+APPDATA = os.getenv("APPDATA") or str(Path.home())
+BASE_CONFIG_DIR = Path(APPDATA) / "GameHelperConfigs"
+WINDOW_DIR = BASE_CONFIG_DIR / "window"
+SIMPLE_DIR = BASE_CONFIG_DIR / "simple"
+for d in (BASE_CONFIG_DIR, WINDOW_DIR, SIMPLE_DIR):
+    d.mkdir(parents=True, exist_ok=True)
 
-def load_settings():
-    if SETTINGS_PATH.exists():
-        try:
-            return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return DEFAULT_SETTINGS.copy()
-    return DEFAULT_SETTINGS.copy()
+# ---------------- Signals ----------------
+class Signals(QtCore.QObject):
+    point_picked = QtCore.pyqtSignal(int, int)
+    hotkey_captured = QtCore.pyqtSignal(str)
 
-def save_settings(s):
-    SETTINGS_PATH.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+signals = Signals()
 
-# ---------------- Clicker thread ----------------
-class ClickerThread(threading.Thread):
+# ---------------- Clicker Threads ----------------
+class WindowClickerThread(threading.Thread):
     def __init__(self, hwnd, point, interval_ms):
         super().__init__(daemon=True)
         self.hwnd = int(hwnd)
@@ -115,173 +107,177 @@ class ClickerThread(threading.Thread):
 
     def run(self):
         while not self._stop.is_set():
-            try:
-                post_left_click(self.hwnd, self.point[0], self.point[1])
-            except Exception as e:
-                print("Click error:", e)
+            post_left_click(self.hwnd, self.point[0], self.point[1])
             time.sleep(self.interval)
 
-# ---------------- Qt Signals helper ----------------
-class Signals(QtCore.QObject):
-    picked = QtCore.pyqtSignal(int, int)        # client coords x,y
-    hotkey_captured = QtCore.pyqtSignal(str)    # friendly string
+class SimpleClickerThread(threading.Thread):
+    def __init__(self, interval_ms):
+        super().__init__(daemon=True)
+        self.interval = max(1, int(interval_ms)) / 1000.0
+        self._stop = threading.Event()
 
-# ---------------- Main UI ----------------
-class AutoClickerUI(QtWidgets.QWidget):
+    def stop(self):
+        self._stop.set()
+
+    def run(self):
+        while not self._stop.is_set():
+            try:
+                pyautogui.click()
+            except Exception as e:
+                print("pyautogui click error:", e)
+            time.sleep(self.interval)
+
+# ---------------- Utility: config manager ----------------
+def list_profiles(mode):
+    d = WINDOW_DIR if mode=="window" else SIMPLE_DIR
+    return [p.name for p in d.glob("*.json")]
+
+def save_profile(mode, name, data):
+    d = WINDOW_DIR if mode=="window" else SIMPLE_DIR
+    p = d / f"{name}.json"
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def load_profile(mode, name):
+    d = WINDOW_DIR if mode=="window" else SIMPLE_DIR
+    p = d / f"{name}.json"
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return None
+
+def delete_profile(mode, name):
+    d = WINDOW_DIR if mode=="window" else SIMPLE_DIR
+    p = d / f"{name}.json"
+    if p.exists():
+        p.unlink()
+
+# ---------------- UI Widgets ----------------
+class MainWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AutoClicker (pick point)")
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
-        self.signals = Signals()
+        v = QtWidgets.QVBoxLayout(self)
+        title = QtWidgets.QLabel("<h2>GameHelper AutoClicker</h2>")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        v.addWidget(title)
+        v.addSpacing(10)
+        v.addWidget(QtWidgets.QLabel("Добро пожаловать! Выберите режим через меню слева (☰)."))
+        v.addStretch()
 
-        self.settings = load_settings()
-        self.clicker = None
-        self.hotkey_binding = self.settings.get("hotkey", "")
-        self.picked_point = tuple(self.settings.get("click_point", [0,0]))
-        self.target_title = self.settings.get("target_title", "")
+# Window autoclicker widget
+class WindowClickerWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.clicker_thread = None
+        self.picked_point = (0,0)
+        self.hotkey_binding = ""
+        self._hotstop = None
 
         self._build_ui()
+        signals.point_picked.connect(self.on_point_picked)
+        signals.hotkey_captured.connect(self.on_hotkey_captured)
         self.refresh_windows()
-        self._load_settings_to_ui()
-
-        # connect signals
-        self.signals.picked.connect(self.on_point_picked)
-        self.signals.hotkey_captured.connect(self.on_hotkey_captured)
-
-        # global hotkey listener thread
-        self.hotkey_listener_thread = None
-        self._start_hotkey_listener()
+        self.load_last_settings()
 
     def _build_ui(self):
         v = QtWidgets.QVBoxLayout(self)
-
-        # target window
-        h_win = QtWidgets.QHBoxLayout()
+        # row: windows + refresh
+        h1 = QtWidgets.QHBoxLayout()
         self.win_combo = QtWidgets.QComboBox()
-        self.btn_refresh = QtWidgets.QPushButton("Refresh")
+        self.btn_refresh = QtWidgets.QPushButton("Refresh windows")
         self.btn_refresh.clicked.connect(self.refresh_windows)
-        h_win.addWidget(QtWidgets.QLabel("Target window:"))
-        h_win.addWidget(self.win_combo)
-        h_win.addWidget(self.btn_refresh)
-        v.addLayout(h_win)
+        h1.addWidget(QtWidgets.QLabel("Target window:"))
+        h1.addWidget(self.win_combo)
+        h1.addWidget(self.btn_refresh)
+        v.addLayout(h1)
 
-        # pick point row
-        h_pick = QtWidgets.QHBoxLayout()
+        # pick point
+        h2 = QtWidgets.QHBoxLayout()
         self.btn_pick = QtWidgets.QPushButton("Pick point (click on screen)")
         self.btn_pick.clicked.connect(self.start_pick_mode)
         self.coord_label = QtWidgets.QLabel("X=0, Y=0")
-        h_pick.addWidget(self.btn_pick)
-        h_pick.addWidget(self.coord_label)
-        v.addLayout(h_pick)
+        h2.addWidget(self.btn_pick); h2.addWidget(self.coord_label)
+        v.addLayout(h2)
 
-        # interval
-        h_int = QtWidgets.QHBoxLayout()
-        self.interval_edit = QtWidgets.QLineEdit(str(self.settings.get("interval_ms", 200)))
-        self.interval_edit.setFixedWidth(120)
-        h_int.addWidget(QtWidgets.QLabel("Interval (ms):"))
-        h_int.addWidget(self.interval_edit)
-        v.addLayout(h_int)
+        # interval and hotkey
+        h3 = QtWidgets.QHBoxLayout()
+        self.interval_edit = QtWidgets.QLineEdit("200"); self.interval_edit.setFixedWidth(120)
+        h3.addWidget(QtWidgets.QLabel("Interval (ms):")); h3.addWidget(self.interval_edit)
+        self.hot_label = QtWidgets.QLineEdit(""); self.hot_label.setReadOnly(True); self.hot_label.setFixedWidth(200)
+        self.btn_record_hot = QtWidgets.QPushButton("Record hotkey"); self.btn_record_hot.clicked.connect(self.start_record_hotkey)
+        h3.addWidget(QtWidgets.QLabel("Hotkey:")); h3.addWidget(self.hot_label); h3.addWidget(self.btn_record_hot)
+        v.addLayout(h3)
 
-        # hotkey recording
-        h_hot = QtWidgets.QHBoxLayout()
-        self.hot_label = QtWidgets.QLineEdit(self.hotkey_binding)
-        self.hot_label.setReadOnly(True)
-        self.btn_record_hot = QtWidgets.QPushButton("Record hotkey")
-        self.btn_record_hot.clicked.connect(self.start_record_hotkey)
-        h_hot.addWidget(QtWidgets.QLabel("Hotkey:"))
-        h_hot.addWidget(self.hot_label)
-        h_hot.addWidget(self.btn_record_hot)
-        v.addLayout(h_hot)
+        # start/stop and save/load configs icons area
+        h4 = QtWidgets.QHBoxLayout()
+        self.btn_start = QtWidgets.QPushButton("Start"); self.btn_stop = QtWidgets.QPushButton("Stop"); self.btn_stop.setEnabled(False)
+        self.btn_start.clicked.connect(self.start_clicker); self.btn_stop.clicked.connect(self.stop_clicker)
+        h4.addWidget(self.btn_start); h4.addWidget(self.btn_stop)
+        # configs icons
+        self.btn_save_cfg = QtWidgets.QPushButton("Save cfg"); self.btn_load_cfg = QtWidgets.QPushButton("Load cfg")
+        self.btn_del_cfg = QtWidgets.QPushButton("Delete cfg"); self.btn_open_cfg_folder = QtWidgets.QPushButton("Open configs folder")
+        self.btn_save_cfg.clicked.connect(self.save_cfg); self.btn_load_cfg.clicked.connect(self.load_cfg)
+        self.btn_del_cfg.clicked.connect(self.delete_cfg); self.btn_open_cfg_folder.clicked.connect(lambda: os.startfile(str(WINDOW_DIR)))
+        h4.addWidget(self.btn_save_cfg); h4.addWidget(self.btn_load_cfg); h4.addWidget(self.btn_del_cfg); h4.addWidget(self.btn_open_cfg_folder)
+        v.addLayout(h4)
 
-        # start/stop
-        h_ctrl = QtWidgets.QHBoxLayout()
-        self.btn_start = QtWidgets.QPushButton("Start")
-        self.btn_stop = QtWidgets.QPushButton("Stop")
-        self.btn_stop.setEnabled(False)
-        self.btn_start.clicked.connect(self.start_clicker)
-        self.btn_stop.clicked.connect(self.stop_clicker)
-        h_ctrl.addWidget(self.btn_start)
-        h_ctrl.addWidget(self.btn_stop)
-        v.addLayout(h_ctrl)
-
-        # saved settings / status
-        h_save = QtWidgets.QHBoxLayout()
-        self.btn_save = QtWidgets.QPushButton("Save settings")
-        self.btn_save.clicked.connect(self.save_settings)
-        self.status_label = QtWidgets.QLabel("")
-        h_save.addWidget(self.btn_save)
-        h_save.addWidget(self.status_label)
-        v.addLayout(h_save)
+        # list of profiles
+        v.addWidget(QtWidgets.QLabel("Profiles:"))
+        self.profiles_list = QtWidgets.QListWidget()
+        v.addWidget(self.profiles_list)
+        self.refresh_profiles_list()
 
         # log
         v.addWidget(QtWidgets.QLabel("Log:"))
-        self.log = QtWidgets.QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumHeight(120)
+        self.log = QtWidgets.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(120)
         v.addWidget(self.log)
 
-    def log_msg(self, txt):
+    def log_msg(self, s):
         ts = time.strftime("%H:%M:%S")
-        self.log.appendPlainText(f"[{ts}] {txt}")
-        self.status_label.setText(txt)
+        self.log.appendPlainText(f"[{ts}] {s}")
 
     def refresh_windows(self):
         cur = self.win_combo.currentText()
         self.win_combo.clear()
-        self.win_combo.addItem("(none) - global", 0)
+        self.win_combo.addItem("(none)", 0)
         for hwnd, title in enum_windows():
             self.win_combo.addItem(title, hwnd)
-        if self.target_title:
-            idx = self.win_combo.findText(self.target_title)
-            if idx >= 0:
-                self.win_combo.setCurrentIndex(idx)
-        self.log_msg("Windows refreshed")
+        self.log_msg("Window list refreshed")
 
-    # --------- Pick point logic ----------
     def start_pick_mode(self):
-        # ensure target selected
         idx = self.win_combo.currentIndex()
         if idx <= 0:
-            QtWidgets.QMessageBox.warning(self, "Pick point", "Select a target window first.")
+            QtWidgets.QMessageBox.warning(self, "Pick", "Select target window first.")
             return
-        # set our window click-through so clicks pass through
-        hwnd_self = int(self.winId())
-        make_window_clickthrough(hwnd_self, enable=True)
-        self.log_msg("Pick mode: click the desired point in the target window (app is click-through).")
+        hwnd_self = int(self.win_combo.window().winId())  # not used but safe
+        # make THIS app click-through
+        set_clickthrough(int(self.winId()), enable=True)
+        self.log_msg("Pick mode: click desired point on screen (app is click-through).")
         self.btn_pick.setEnabled(False)
-        # start a background mouse listener to capture the next click
         t = threading.Thread(target=self._mouse_pick_thread, daemon=True)
         t.start()
 
     def _mouse_pick_thread(self):
-        # capture single click using pynput
         captured = {"done": False}
         def on_click(x, y, button, pressed):
             if not pressed:
                 return
             if captured["done"]:
                 return
-            # get selected target hwnd
             hwnd = int(self.win_combo.currentData())
             if not hwnd:
                 captured["done"] = True
                 return False
-            # convert screen to client coords
             try:
                 cx, cy = screen_to_client(hwnd, int(x), int(y))
             except Exception:
                 cx, cy = 0, 0
             captured["done"] = True
-            # restore window clickable
-            make_window_clickthrough(int(self.winId()), enable=False)
-            # emit signal to UI thread
-            self.signals.picked.emit(cx, cy)
-            # stop listener
+            # restore clickable
+            set_clickthrough(int(self.winId()), enable=False)
+            signals.point_picked.emit(cx, cy)
             return False
 
         with pynput_mouse.Listener(on_click=on_click) as listener:
             listener.join()
-        # re-enable pick button in UI thread
         QtCore.QMetaObject.invokeMethod(self, "_after_pick_ui", QtCore.Qt.QueuedConnection)
 
     @QtCore.pyqtSlot()
@@ -294,9 +290,8 @@ class AutoClickerUI(QtWidgets.QWidget):
         self.coord_label.setText(f"X={x}, Y={y}")
         self.log_msg(f"Point picked: {x},{y}")
 
-    # --------- Hotkey recording ----------
+    # hotkey recording
     def start_record_hotkey(self):
-        # UI feedback
         self.hot_label.setText("НАЖМИТЕ КНОПКУ...")
         self.btn_record_hot.setEnabled(False)
         t = threading.Thread(target=self._hotkey_record_thread, daemon=True)
@@ -304,49 +299,30 @@ class AutoClickerUI(QtWidgets.QWidget):
 
     def _hotkey_record_thread(self):
         captured = {"done": False}
-        result = {"type": None, "val": None}
-        # on keyboard
+        res = {"type":None, "val":None}
         def on_press(key):
             if captured["done"]:
                 return False
             try:
-                # friendly
                 if hasattr(key, "char") and key.char:
                     name = key.char
                 else:
                     name = str(key).split(".")[-1]
-                result["type"] = "key"
-                result["val"] = name
-                captured["done"] = True
-                return False
-            except Exception:
-                return False
-        # on mouse
-        def on_click(x, y, button, pressed):
-            if captured["done"] or not pressed:
-                return False
-            result["type"] = "mouse"
-            result["val"] = str(button).split(".")[-1]
-            captured["done"] = True
-            return False
+                res["type"]="key"; res["val"]=name; captured["done"]=True; return False
+            except: return False
+        def on_click(x,y,button,pressed):
+            if captured["done"] or not pressed: return False
+            res["type"]="mouse"; res["val"]=str(button).split(".")[-1]; captured["done"]=True; return False
 
         kb = pynput_keyboard.Listener(on_press=on_press)
         ms = pynput_mouse.Listener(on_click=on_click)
         kb.start(); ms.start()
-        # wait until captured
         while not captured["done"]:
             time.sleep(0.01)
-        try:
-            kb.stop()
-            ms.stop()
-        except Exception:
-            pass
-        # send friendly string back to UI
-        if result["type"] == "key":
-            friendly = f"key:{result['val']}"
-        else:
-            friendly = f"mouse:{result['val']}"
-        self.signals.hotkey_captured.emit(friendly)
+        try: kb.stop(); ms.stop()
+        except: pass
+        friendly = f"{res['type']}:{res['val']}"
+        signals.hotkey_captured.emit(friendly)
         QtCore.QMetaObject.invokeMethod(self, "_enable_record_btn", QtCore.Qt.QueuedConnection)
 
     @QtCore.pyqtSlot()
@@ -354,146 +330,341 @@ class AutoClickerUI(QtWidgets.QWidget):
         self.btn_record_hot.setEnabled(True)
 
     @QtCore.pyqtSlot(str)
-    def on_hotkey_captured(self, friendly):
-        self.hotkey_binding = friendly
-        self.hot_label.setText(friendly)
-        self.log_msg(f"Hotkey recorded: {friendly}")
-        # restart global listener to use new binding
+    def on_hotkey_captured(self, s):
+        self.hotkey_binding = s
+        self.hot_label.setText(s)
+        self.log_msg("Hotkey recorded: "+s)
         self._start_hotkey_listener()
 
-    # --------- Global hotkey listener (toggle start/stop) ----------
     def _start_hotkey_listener(self):
-        # stop existing thread by using an event
         if hasattr(self, "_hotstop") and self._hotstop:
             self._hotstop.set()
         self._hotstop = threading.Event()
-        t = threading.Thread(target=self._hotkey_listener_thread, daemon=True)
+        t = threading.Thread(target=self._hot_listener_thread, daemon=True)
         t.start()
-        self.hotkey_listener_thread = t
 
-    def _hotkey_listener_thread(self):
+    def _hot_listener_thread(self):
         stop_event = self._hotstop
-        if not self.hotkey_binding:
+        if not getattr(self, "hotkey_binding", ""):
             return
-        # parse binding
-        btype, bval = self.hotkey_binding.split(":", 1)
-        # keyboard listener and mouse listener both running, check events
+        btype, bval = self.hotkey_binding.split(":",1)
         def on_k(key):
-            if stop_event.is_set():
-                return False
+            if stop_event.is_set(): return False
             try:
                 name = key.char if hasattr(key, "char") and key.char else str(key).split(".")[-1]
-                if btype == "key" and name == bval:
-                    # toggle in GUI thread
+                if btype=="key" and name==bval:
                     QtCore.QMetaObject.invokeMethod(self, "_toggle_ui", QtCore.Qt.QueuedConnection)
-            except Exception:
-                pass
-
-        def on_m(x, y, button, pressed):
-            if stop_event.is_set():
-                return False
-            if not pressed:
-                return
-            if btype == "mouse" and str(button).split(".")[-1] == bval:
+            except: pass
+        def on_m(x,y,button,pressed):
+            if stop_event.is_set(): return False
+            if not pressed: return
+            if btype=="mouse" and str(button).split(".")[-1]==bval:
                 QtCore.QMetaObject.invokeMethod(self, "_toggle_ui", QtCore.Qt.QueuedConnection)
-
         kb = pynput_keyboard.Listener(on_press=on_k)
         ms = pynput_mouse.Listener(on_click=on_m)
         kb.start(); ms.start()
         while not stop_event.is_set():
             time.sleep(0.1)
-        try:
-            kb.stop(); ms.stop()
-        except Exception:
-            pass
+        try: kb.stop(); ms.stop()
+        except: pass
 
     @QtCore.pyqtSlot()
     def _toggle_ui(self):
-        # toggle start/stop
-        if self.btn_start.isEnabled():
-            self.start_clicker()
-        else:
-            self.stop_clicker()
+        if self.btn_start.isEnabled(): self.start_clicker()
+        else: self.stop_clicker()
 
-    # --------- Start / Stop clicker ----------
     def start_clicker(self):
         idx = self.win_combo.currentIndex()
         if idx <= 0:
-            QtWidgets.QMessageBox.warning(self, "Start", "Select a target window.")
+            QtWidgets.QMessageBox.warning(self, "Start", "Select target window.")
             return
         hwnd = int(self.win_combo.currentData())
-        if not hasattr(self, "picked_point") or not self.picked_point or self.picked_point == (0,0):
+        if not hasattr(self, "picked_point") or self.picked_point==(0,0):
             QtWidgets.QMessageBox.warning(self, "Start", "Pick a point first.")
             return
         try:
             interval = int(self.interval_edit.text())
-            if interval < 1:
-                raise ValueError()
-        except Exception:
-            QtWidgets.QMessageBox.warning(self, "Start", "Interval must be integer ms >= 1.")
-            return
-        # start thread
-        self.clicker = ClickerThread(hwnd, self.picked_point, interval)
-        self.clicker.start()
-        self.btn_start.setEnabled(False)
-        self.btn_stop.setEnabled(True)
-        self.log_msg("Clicker started.")
-        # save details in settings
-        self.settings["interval_ms"] = interval
-        self.settings["hotkey"] = self.hotkey_binding
-        self.settings["target_title"] = self.win_combo.currentText()
-        self.settings["click_point"] = list(self.picked_point)
-        save_settings(self.settings)
+        except:
+            QtWidgets.QMessageBox.warning(self,"Start","Interval must be integer ms >=1"); return
+        self.clicker_thread = WindowClickerThread(hwnd, self.picked_point, interval)
+        self.clicker_thread.start()
+        self.btn_start.setEnabled(False); self.btn_stop.setEnabled(True)
+        self.log_msg("Window clicker started.")
+        # save 'last-used' quick settings
+        last = {"interval_ms": interval, "hotkey": getattr(self,"hotkey_binding",""), "target_title":self.win_combo.currentText(), "click_point": list(self.picked_point)}
+        Path(BASE_CONFIG_DIR / "last_window.json").write_text(json.dumps(last, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def stop_clicker(self):
-        if self.clicker:
-            self.clicker.stop()
-            self.clicker = None
-        self.btn_start.setEnabled(True)
-        self.btn_stop.setEnabled(False)
-        self.log_msg("Clicker stopped.")
+        if self.clicker_thread:
+            self.clicker_thread.stop(); self.clicker_thread=None
+        self.btn_start.setEnabled(True); self.btn_stop.setEnabled(False)
+        self.log_msg("Window clicker stopped.")
 
-    def save_settings(self):
-        try:
-            interval = int(self.interval_edit.text())
-        except:
-            interval = self.settings.get("interval_ms", 200)
-        self.settings["interval_ms"] = interval
-        self.settings["hotkey"] = self.hotkey_binding
-        self.settings["target_title"] = self.win_combo.currentText()
-        self.settings["click_point"] = list(self.picked_point) if hasattr(self, "picked_point") else [0,0]
-        save_settings(self.settings)
-        self.log_msg("Settings saved.")
+    # configs
+    def refresh_profiles_list(self):
+        self.profiles_list.clear()
+        for name in list_profiles("window"):
+            self.profiles_list.addItem(name)
 
-    def _load_settings_to_ui(self):
-        try:
-            self.interval_edit.setText(str(self.settings.get("interval_ms", 200)))
-            self.hotkey_binding = self.settings.get("hotkey", "")
-            self.hot_label.setText(self.hotkey_binding)
-            self.picked_point = tuple(self.settings.get("click_point", [0,0]))
-            self.coord_label.setText(f"X={self.picked_point[0]}, Y={self.picked_point[1]}")
-            self.target_title = self.settings.get("target_title", "")
-        except Exception:
-            pass
+    def save_cfg(self):
+        name, ok = QtWidgets.QInputDialog.getText(self,"Save profile","Enter profile name:")
+        if not ok or not name.strip(): return
+        data = {"interval_ms": int(self.interval_edit.text()), "hotkey": getattr(self,"hotkey_binding",""), "target_title": self.win_combo.currentText(), "click_point": list(self.picked_point)}
+        save_profile("window", name.strip(), data)
+        self.log_msg(f"Saved profile '{name.strip()}'")
+        self.refresh_profiles_list()
 
-    def closeEvent(self, ev):
-        # cleanup: stop listeners and clicker
-        try:
-            if hasattr(self, "_hotstop") and self._hotstop:
-                self._hotstop.set()
-        except Exception:
-            pass
-        try:
-            if self.clicker:
-                self.clicker.stop()
-        except Exception:
-            pass
-        ev.accept()
+    def load_cfg(self):
+        item = self.profiles_list.currentItem()
+        if not item:
+            QtWidgets.QMessageBox.information(self,"Load","Select profile from list")
+            return
+        name = item.text()
+        data = load_profile("window", name)
+        if not data: return
+        self.interval_edit.setText(str(data.get("interval_ms",200)))
+        self.hotkey_binding = data.get("hotkey","")
+        self.hot_label.setText(self.hotkey_binding)
+        self.picked_point = tuple(data.get("click_point",[0,0]))
+        self.coord_label.setText(f"X={self.picked_point[0]}, Y={self.picked_point[1]}")
+        # set selected window if possible
+        title = data.get("target_title","")
+        if title:
+            idx = self.win_combo.findText(title)
+            if idx>=0: self.win_combo.setCurrentIndex(idx)
+        self.log_msg(f"Loaded profile '{name}'")
+        self._start_hotkey_listener()
+
+    def delete_cfg(self):
+        item = self.profiles_list.currentItem()
+        if not item:
+            QtWidgets.QMessageBox.information(self,"Delete","Select profile from list")
+            return
+        name = item.text()
+        delete_profile("window", name)
+        self.log_msg(f"Deleted profile '{name}'")
+        self.refresh_profiles_list()
+
+    def load_last_settings(self):
+        p = BASE_CONFIG_DIR / "last_window.json"
+        if p.exists():
+            try:
+                last = json.loads(p.read_text(encoding="utf-8"))
+                self.interval_edit.setText(str(last.get("interval_ms",200)))
+                self.hotkey_binding = last.get("hotkey","")
+                self.hot_label.setText(self.hotkey_binding)
+                self.picked_point = tuple(last.get("click_point",[0,0]))
+                self.coord_label.setText(f"X={self.picked_point[0]}, Y={self.picked_point[1]}")
+                title = last.get("target_title","")
+                if title:
+                    idx = self.win_combo.findText(title)
+                    if idx>=0: self.win_combo.setCurrentIndex(idx)
+            except: pass
+
+# Simple autoclicker widget
+class SimpleClickerWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.clicker_thread = None
+        self.hotkey_binding = ""
+        self._hotstop = None
+        self._build_ui()
+        signals.hotkey_captured.connect(self.on_hotkey_captured)
+        self.load_last_settings()
+
+    def _build_ui(self):
+        v = QtWidgets.QVBoxLayout(self)
+        # interval & hotkey
+        h1 = QtWidgets.QHBoxLayout()
+        self.interval_edit = QtWidgets.QLineEdit("200"); self.interval_edit.setFixedWidth(120)
+        h1.addWidget(QtWidgets.QLabel("Interval (ms):")); h1.addWidget(self.interval_edit)
+        self.hot_label = QtWidgets.QLineEdit(""); self.hot_label.setReadOnly(True); self.hot_label.setFixedWidth(200)
+        self.btn_record_hot = QtWidgets.QPushButton("Record hotkey"); self.btn_record_hot.clicked.connect(self.start_record_hotkey)
+        h1.addWidget(QtWidgets.QLabel("Hotkey:")); h1.addWidget(self.hot_label); h1.addWidget(self.btn_record_hot)
+        v.addLayout(h1)
+        # start/stop and cfg icons
+        h2 = QtWidgets.QHBoxLayout()
+        self.btn_start = QtWidgets.QPushButton("Start"); self.btn_stop = QtWidgets.QPushButton("Stop"); self.btn_stop.setEnabled(False)
+        self.btn_start.clicked.connect(self.start_clicker); self.btn_stop.clicked.connect(self.stop_clicker)
+        h2.addWidget(self.btn_start); h2.addWidget(self.btn_stop)
+        self.btn_save = QtWidgets.QPushButton("Save cfg"); self.btn_load = QtWidgets.QPushButton("Load cfg"); self.btn_del = QtWidgets.QPushButton("Delete cfg"); self.btn_open = QtWidgets.QPushButton("Open configs folder")
+        self.btn_save.clicked.connect(self.save_cfg); self.btn_load.clicked.connect(self.load_cfg); self.btn_del.clicked.connect(self.delete_cfg); self.btn_open.clicked.connect(lambda: os.startfile(str(SIMPLE_DIR)))
+        h2.addWidget(self.btn_save); h2.addWidget(self.btn_load); h2.addWidget(self.btn_del); h2.addWidget(self.btn_open)
+        v.addLayout(h2)
+        # profiles list and log
+        v.addWidget(QtWidgets.QLabel("Profiles:"))
+        self.profiles_list = QtWidgets.QListWidget(); v.addWidget(self.profiles_list); self.refresh_profiles_list()
+        v.addWidget(QtWidgets.QLabel("Log:"))
+        self.log = QtWidgets.QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(120); v.addWidget(self.log)
+
+    def log_msg(self, s):
+        ts = time.strftime("%H:%M:%S")
+        self.log.appendPlainText(f"[{ts}] {s}")
+
+    def start_record_hotkey(self):
+        self.hot_label.setText("НАЖМИТЕ КНОПКУ...")
+        self.btn_record_hot.setEnabled(False)
+        t = threading.Thread(target=self._hotkey_record_thread, daemon=True); t.start()
+
+    def _hotkey_record_thread(self):
+        captured = {"done": False}
+        res = {"type":None, "val":None}
+        def on_press(key):
+            if captured["done"]: return False
+            try:
+                if hasattr(key,"char") and key.char: name=key.char
+                else: name=str(key).split(".")[-1]
+                res["type"]="key"; res["val"]=name; captured["done"]=True; return False
+            except: return False
+        def on_click(x,y,button,pressed):
+            if captured["done"] or not pressed: return False
+            res["type"]="mouse"; res["val"]=str(button).split(".")[-1]; captured["done"]=True; return False
+        kb = pynput_keyboard.Listener(on_press=on_press); ms = pynput_mouse.Listener(on_click=on_click)
+        kb.start(); ms.start()
+        while not captured["done"]: time.sleep(0.01)
+        try: kb.stop(); ms.stop()
+        except: pass
+        friendly = f"{res['type']}:{res['val']}"
+        signals.hotkey_captured.emit(friendly)
+        QtCore.QMetaObject.invokeMethod(self, "_enable_record_btn", QtCore.Qt.QueuedConnection)
+
+    @QtCore.pyqtSlot()
+    def _enable_record_btn(self):
+        self.btn_record_hot.setEnabled(True)
+
+    @QtCore.pyqtSlot(str)
+    def on_hotkey_captured(self, s):
+        self.hotkey_binding = s
+        self.hot_label.setText(s)
+        self.log_msg("Hotkey recorded: "+s)
+        self._start_hot_listener()
+
+    def _start_hot_listener(self):
+        if hasattr(self,"_hotstop") and self._hotstop: self._hotstop.set()
+        self._hotstop = threading.Event()
+        t = threading.Thread(target=self._hot_listener_thread, daemon=True); t.start()
+
+    def _hot_listener_thread(self):
+        stop_event = self._hotstop
+        if not getattr(self,"hotkey_binding",""): return
+        btype,bval = self.hotkey_binding.split(":",1)
+        def on_k(key):
+            if stop_event.is_set(): return False
+            try:
+                name = key.char if hasattr(key,"char") and key.char else str(key).split(".")[-1]
+                if btype=="key" and name==bval:
+                    QtCore.QMetaObject.invokeMethod(self, "_toggle_ui", QtCore.Qt.QueuedConnection)
+            except: pass
+        def on_m(x,y,button,pressed):
+            if stop_event.is_set(): return False
+            if not pressed: return
+            if btype=="mouse" and str(button).split(".")[-1]==bval:
+                QtCore.QMetaObject.invokeMethod(self, "_toggle_ui", QtCore.Qt.QueuedConnection)
+        kb = pynput_keyboard.Listener(on_press=on_k); ms = pynput_mouse.Listener(on_click=on_m)
+        kb.start(); ms.start()
+        while not stop_event.is_set(): time.sleep(0.1)
+        try: kb.stop(); ms.stop()
+        except: pass
+
+    @QtCore.pyqtSlot()
+    def _toggle_ui(self):
+        if self.btn_start.isEnabled(): self.start_clicker()
+        else: self.stop_clicker()
+
+    def start_clicker(self):
+        try: interval = int(self.interval_edit.text())
+        except: QtWidgets.QMessageBox.warning(self,"Start","Interval must be int >=1"); return
+        self.clicker_thread = SimpleClickerThread(interval); self.clicker_thread.start()
+        self.btn_start.setEnabled(False); self.btn_stop.setEnabled(True); self.log_msg("Simple clicker started.")
+        last = {"interval_ms": interval, "hotkey": getattr(self,"hotkey_binding","")}
+        Path(BASE_CONFIG_DIR / "last_simple.json").write_text(json.dumps(last, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def stop_clicker(self):
+        if self.clicker_thread: self.clicker_thread.stop(); self.clicker_thread=None
+        self.btn_start.setEnabled(True); self.btn_stop.setEnabled(False); self.log_msg("Simple clicker stopped.")
+
+    def refresh_profiles_list(self):
+        self.profiles_list.clear()
+        for n in list_profiles("simple"): self.profiles_list.addItem(n)
+
+    def save_cfg(self):
+        name, ok = QtWidgets.QInputDialog.getText(self,"Save profile","Enter profile name:")
+        if not ok or not name.strip(): return
+        data = {"interval_ms": int(self.interval_edit.text()), "hotkey": getattr(self,"hotkey_binding","")}
+        save_profile("simple", name.strip(), data); self.log_msg(f"Saved profile '{name.strip()}'"); self.refresh_profiles_list()
+
+    def load_cfg(self):
+        item = self.profiles_list.currentItem()
+        if not item: QtWidgets.QMessageBox.information(self,"Load","Select profile"); return
+        name = item.text(); data = load_profile("simple", name)
+        if not data: return
+        self.interval_edit.setText(str(data.get("interval_ms",200))); self.hotkey_binding = data.get("hotkey",""); self.hot_label.setText(self.hotkey_binding)
+        self.log_msg(f"Loaded profile '{name}'"); self._start_hot_listener()
+
+    def delete_cfg(self):
+        item = self.profiles_list.currentItem()
+        if not item: QtWidgets.QMessageBox.information(self,"Delete","Select profile"); return
+        name = item.text(); delete_profile("simple", name); self.log_msg(f"Deleted profile '{name}'"); self.refresh_profiles_list()
+
+    def load_last_settings(self):
+        p = BASE_CONFIG_DIR / "last_simple.json"
+        if p.exists():
+            try:
+                last = json.loads(p.read_text(encoding="utf-8"))
+                self.interval_edit.setText(str(last.get("interval_ms",200)))
+                self.hotkey_binding = last.get("hotkey",""); self.hot_label.setText(self.hotkey_binding)
+            except: pass
+
+# ---------------- Main Application Window ----------------
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("GameHelper AutoClicker")
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        self.resize(740, 480)
+        # dark theme
+        self.setStyleSheet("""
+            QWidget{ background:#1e1e1e; color:#e6e6e6; font-family:Segoe UI; }
+            QLineEdit, QPlainTextEdit, QListWidget{ background:#2b2b2b; color:#e6e6e6; border:1px solid #333; }
+            QPushButton{ background:#2d6aee; color:white; padding:6px; border-radius:4px; }
+            QPushButton:disabled{ background:#555; }
+            QComboBox{ background:#2b2b2b; color:#e6e6e6; }
+            QLabel{ color:#ddd; }
+        """)
+        # central stacked widget
+        self.stack = QtWidgets.QStackedWidget()
+        self.main_w = MainWidget()
+        self.window_w = WindowClickerWidget()
+        self.simple_w = SimpleClickerWidget()
+        self.stack.addWidget(self.main_w); self.stack.addWidget(self.window_w); self.stack.addWidget(self.simple_w)
+        self.setCentralWidget(self.stack)
+
+        # top-left hamburger menu
+        tb = QtWidgets.QToolBar(); tb.setMovable(False); tb.setFloatable(False)
+        self.addToolBar(QtCore.Qt.LeftToolBarArea, tb)
+        self.menu_btn = QtWidgets.QToolButton(); self.menu_btn.setText("☰"); self.menu_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        menu = QtWidgets.QMenu()
+        menu.addAction("Главная", lambda: self.switch_to("main"))
+        menu.addAction("Window Autoclicker", lambda: self.switch_to("window"))
+        menu.addAction("Simple Autoclicker", lambda: self.switch_to("simple"))
+        menu.addSeparator()
+        menu.addAction("Refresh windows (in window mode)", lambda: self.window_w.refresh_windows())
+        tb.addWidget(self.menu_btn); self.menu_btn.setMenu(menu)
+        # start on main
+        self.switch_to("main")
+
+    def switch_to(self, name):
+        if name=="main":
+            self.stack.setCurrentWidget(self.main_w)
+        elif name=="window":
+            self.stack.setCurrentWidget(self.window_w)
+        elif name=="simple":
+            self.stack.setCurrentWidget(self.simple_w)
 
 # ---------------- Run ----------------
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    w = AutoClickerUI()
+    w = MainWindow()
     w.show()
     sys.exit(app.exec_())
 
