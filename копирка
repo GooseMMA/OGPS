@@ -1,11 +1,25 @@
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py main.py
-Traceback (most recent call last):
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\main.py", line 47, in <module>
-    main()
-    ~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\main.py", line 33, in main
-    if not license_manager.ensure_license_interactive():
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: module 'core.license_manager' has no attribute 'ensure_license_interactive'
+import sys
+from core import license_manager
 
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>
+def main():
+    print("🔹 Запуск GameHelper...")
+
+    # Создаём объект менеджера лицензий
+    lm = license_manager.LicenseManager()
+
+    # Проверяем лицензию
+    if not lm.ensure_license_interactive():
+        print("❌ Программа завершена. Нет действительной лицензии.")
+        sys.exit(1)
+
+    # Если всё хорошо, продолжаем работу
+    days_left = lm.days_left()
+    print(f"✅ Лицензия активна. Осталось {days_left} дней.")
+    print("🚀 Запуск основного приложения...")
+
+    # Здесь будет запуск твоего GUI или основной логики
+    # (например, import app; app.run() — если позже добавишь GUI)
+    input("Нажмите Enter для выхода...")
+
+if __name__ == "__main__":
+    main()
