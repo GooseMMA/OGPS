@@ -1,183 +1,44 @@
-import sys, os, time, threading, json, pyautogui, winsound
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QPushButton, QVBoxLayout,
-    QHBoxLayout, QMessageBox, QListWidget, QInputDialog
-)
-from PyQt5.QtCore import Qt, QTimer
-from core.license_manager import LicenseManager
+import sys, os, argparse, json, base64, hashlib
+from datetime import datetime, timedelta
+
+# 🔧 Добавляем путь к корневой папке проекта
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.hwid import get_hwid
 
 
-# -------------------- Класс ядра кликера --------------------
-class ClickerEngine:
-    def __init__(self, interval=0.5):
-        self.running = False
-        self.interval = interval
-        self.click_count = 0
-        self.windows = []
+def generate_license(hwid: str, days: int):
+    """Создание зашифрованного лицензионного ключа."""
+    expires = datetime.utcnow() + timedelta(days=days)
+    payload = {
+        "hwid": hwid,
+        "exp": expires.strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
-    def start_clicking(self):
-        if self.running:
-            return
-        self.running = True
-        threading.Thread(target=self._click_loop, daemon=True).start()
-        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    # Простая подпись (для теста)
+    secret = "SUPER_SECRET_KEY"
+    data_str = json.dumps(payload)
+    signature = hashlib.sha256((data_str + secret).encode()).hexdigest()
 
-    def stop_clicking(self):
-        self.running = False
-        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+    license_data = {
+        "data": payload,
+        "sig": signature,
+    }
 
-    def _click_loop(self):
-        while self.running:
-            for w in self.windows:
-                if w["active"]:
-                    x, y = w["coord"]
-                    pyautogui.click(x, y)
-                    self.click_count += 1
-            time.sleep(self.interval)
+    encoded = base64.urlsafe_b64encode(json.dumps(license_data).encode()).decode()
+    return encoded
 
 
-# -------------------- HUD поверх окон --------------------
-class HUDOverlay(QWidget):
-    def __init__(self, engine: ClickerEngine):
-        super().__init__()
-        self.engine = engine
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setGeometry(100, 100, 200, 60)
-        layout = QVBoxLayout()
-        self.label_time = QLabel("Время: 0s")
-        self.label_clicks = QLabel("Клики: 0")
-        layout.addWidget(self.label_time)
-        layout.addWidget(self.label_clicks)
-        self.setLayout(layout)
-        self.session_time = 0
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_info)
-        self.timer.start(1000)
-
-    def update_info(self):
-        if self.engine.running:
-            self.session_time += 1
-        self.label_time.setText(f"Время: {self.session_time}s")
-        self.label_clicks.setText(f"Клики: {self.engine.click_count}")
-
-
-# -------------------- Главное окно --------------------
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("GameHelper PROTOTYPE")
-        self.setGeometry(300, 150, 600, 400)
-
-        self.clicker = ClickerEngine()
-        self.hud = HUDOverlay(self.clicker)
-        self.hud.show()
-
-        # Папка конфигов
-        self.APPDATA = os.getenv('APPDATA') + "\\GameHelper\\data"
-        self.CONFIGS_DIR = os.path.join(self.APPDATA, "configs")
-        os.makedirs(self.CONFIGS_DIR, exist_ok=True)
-        self.configs = {}
-        self.load_configs()
-
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = QVBoxLayout()
-
-        label = QLabel("Добро пожаловать в GameHelper!")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-
-        btn_start = QPushButton("▶ Старт")
-        btn_start.clicked.connect(self.clicker.start_clicking)
-        layout.addWidget(btn_start)
-
-        btn_stop = QPushButton("⏹ Стоп")
-        btn_stop.clicked.connect(self.clicker.stop_clicking)
-        layout.addWidget(btn_stop)
-
-        btn_add_window = QPushButton("➕ Добавить окно (по координате)")
-        btn_add_window.clicked.connect(self.add_window)
-        layout.addWidget(btn_add_window)
-
-        btn_settings = QPushButton("⚙ Настройки")
-        btn_settings.clicked.connect(self.open_settings)
-        layout.addWidget(btn_settings)
-
-        # Конфиги
-        self.config_list = QListWidget()
-        self.update_config_list()
-        layout.addWidget(self.config_list)
-
-        btn_load = QPushButton("Загрузить конфиг")
-        btn_load.clicked.connect(self.load_config)
-        btn_save = QPushButton("Сохранить конфиг")
-        btn_save.clicked.connect(self.save_config)
-        layout.addWidget(btn_save)
-        layout.addWidget(btn_load)
-
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-    def add_window(self):
-        x, y = pyautogui.position()
-        self.clicker.windows.append({"coord": (x, y), "active": True})
-        QMessageBox.information(self, "Окно добавлено", f"Клик по координатам {x},{y}")
-
-    def open_settings(self):
-        QMessageBox.information(
-            self, "Настройки",
-            "Здесь позже появятся цвета интерфейса, темы и прозрачность HUD."
-        )
-
-    def save_config(self):
-        name, ok = QInputDialog.getText(self, "Сохранение", "Введите имя конфига:")
-        if ok and name:
-            path = os.path.join(self.CONFIGS_DIR, f"{name}.json")
-            with open(path, "w") as f:
-                json.dump({"windows": self.clicker.windows}, f)
-            QMessageBox.information(self, "✅", f"Конфиг {name} сохранён.")
-            self.update_config_list()
-
-    def load_config(self):
-        selected = self.config_list.currentItem()
-        if not selected:
-            QMessageBox.warning(self, "⚠", "Выберите конфиг из списка.")
-            return
-        name = selected.text()
-        path = os.path.join(self.CONFIGS_DIR, name)
-        with open(path, "r") as f:
-            data = json.load(f)
-        self.clicker.windows = data.get("windows", [])
-        QMessageBox.information(self, "✅", f"Конфиг {name} загружен.")
-
-    def load_configs(self):
-        os.makedirs(self.CONFIGS_DIR, exist_ok=True)
-        self.configs = {
-            f: os.path.join(self.CONFIGS_DIR, f)
-            for f in os.listdir(self.CONFIGS_DIR)
-            if f.endswith(".json")
-        }
-
-    def update_config_list(self):
-        self.load_configs()
-        self.config_list.clear()
-        for key in self.configs:
-            self.config_list.addItem(key)
-
-
-# -------------------- MAIN --------------------
 def main():
-    license_manager = LicenseManager()
-    if not license_manager.ensure_license():
-        return  # Программа завершится, если лицензия невалидна
+    parser = argparse.ArgumentParser(description="License Key Generator")
+    parser.add_argument("hwid", help="HWID устройства")
+    parser.add_argument("--days", type=int, default=7, help="Количество дней действия лицензии")
+    args = parser.parse_args()
 
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+    key = generate_license(args.hwid, args.days)
+    print("\n✅ Сгенерирован ключ:")
+    print(key)
+    print(f"\n🔒 Действителен {args.days} дней.")
 
 
 if __name__ == "__main__":
