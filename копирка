@@ -1,17 +1,105 @@
 import os
-from core.license_manager import LicenseManager
+import json
+import base64
+import hashlib
+import hmac
+from datetime import datetime, timedelta
+from core.hwid import get_hwid
 
-def main():
-    lm = LicenseManager()
-    if not lm.ensure_license_interactive():
-        print("❌ Программа закрывается — лицензия недействительна.")
-        return
+LICENSE_PATH = os.path.join(os.getenv("APPDATA"), "GameHelperConfigs", "license.json")
+SECRET_KEY = b"UltraSecretKeyForSignature_v1"
 
-    print("✅ Добро пожаловать! Программа активирована.")
-    print(f"📅 Осталось дней: {lm.days_left()}")
+def sign_data(data: str) -> str:
+    return hmac.new(SECRET_KEY, data.encode(), hashlib.sha256).hexdigest()
 
-    # Здесь будет запуск GUI и всей логики автокликера
-    input("Нажмите Enter, чтобы выйти...")
+def verify_signature(data: str, sig: str) -> bool:
+    expected = sign_data(data)
+    # ✅ заменено на hmac.compare_digest, так как hashlib.compare_digest нет
+    return hmac.compare_digest(expected, sig)
 
-if __name__ == "__main__":
-    main()
+def encode_token(hwid: str, expires: datetime) -> str:
+    data = {
+        "hwid": hwid,
+        "exp": expires.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    raw = json.dumps(data)
+    sig = sign_data(raw)
+    token = {"data": data, "sig": sig}
+    return base64.b64encode(json.dumps(token).encode()).decode()
+
+def decode_token(token: str):
+    try:
+        decoded = json.loads(base64.b64decode(token).decode())
+        return decoded["data"], decoded["sig"]
+    except Exception:
+        return None, None
+
+def verify_token_and_compute_expire(token: str):
+    data, sig = decode_token(token)
+    if not data:
+        return False, "Неверный формат токена"
+
+    raw = json.dumps(data)
+    if not verify_signature(raw, sig):
+        return False, "Подпись не совпадает"
+
+    hwid = data.get("hwid")
+    exp = datetime.strptime(data.get("exp"), "%Y-%m-%d %H:%M:%S")
+
+    if hwid != get_hwid():
+        return False, "HWID не совпадает"
+
+    if datetime.utcnow() > exp:
+        return False, "Срок действия истёк"
+
+    return True, exp
+
+class LicenseManager:
+    def __init__(self):
+        os.makedirs(os.path.dirname(LICENSE_PATH), exist_ok=True)
+        self.license_data = self._load_license()
+
+    def _load_license(self):
+        if os.path.exists(LICENSE_PATH):
+            try:
+                with open(LICENSE_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+
+    def _save_license(self, token):
+        with open(LICENSE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"token": token}, f)
+
+    def ensure_license_interactive(self) -> bool:
+        if self.license_data:
+            token = self.license_data.get("token")
+            ok, info = verify_token_and_compute_expire(token)
+            if ok:
+                return True
+            else:
+                print(f"❌ Лицензия недействительна: {info}")
+
+        hwid = get_hwid()
+        print("❌ Лицензия не найдена или недействительна!")
+        print(f"Ваш HWID: {hwid}")
+        token = input("Введите ключ активации: ").strip()
+
+        ok, info = verify_token_and_compute_expire(token)
+        if not ok:
+            print("Неверный ключ!")
+            return False
+
+        self._save_license(token)
+        print("✅ Лицензия успешно активирована!")
+        return True
+
+    def days_left(self):
+        token = self.license_data.get("token") if self.license_data else None
+        if not token:
+            return 0
+        ok, exp = verify_token_and_compute_expire(token)
+        if not ok:
+            return 0
+        return (exp - datetime.utcnow()).days
