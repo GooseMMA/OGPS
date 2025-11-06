@@ -1,52 +1,17 @@
-Microsoft Windows [Version 10.0.19045.6456]
-(c) Корпорация Майкрософт (Microsoft Corporation). Все права защищены.
+import os
+from core.license_manager import LicenseManager
 
-C:\Windows\system32>cd "C:\Users\andre\OneDrive\Рабочий стол\Новая папка"
+def main():
+    lm = LicenseManager()
+    if not lm.ensure_license_interactive():
+        print("❌ Программа закрывается — лицензия недействительна.")
+        return
 
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py admin\keygen.py --days 7 7894946e8c8b5521f58e6e809fc3051d8a45631e54ce83f7bff40f6793361fe0
-Traceback (most recent call last):
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\admin\keygen.py", line 3, in <module>
-    from core.hwid import get_hwid
-ModuleNotFoundError: No module named 'core'
+    print("✅ Добро пожаловать! Программа активирована.")
+    print(f"📅 Осталось дней: {lm.days_left()}")
 
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py admin\keygen.py --days 7 7894946e8c8b5521f58e6e809fc3051d8a45631e54ce83f7bff40f6793361fe0
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка\admin\keygen.py:12: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-  expires = datetime.utcnow() + timedelta(days=days)
+    # Здесь будет запуск GUI и всей логики автокликера
+    input("Нажмите Enter, чтобы выйти...")
 
-✅ Сгенерирован ключ:
-eyJkYXRhIjogeyJod2lkIjogIjc4OTQ5NDZlOGM4YjU1MjFmNThlNmU4MDlmYzMwNTFkOGE0NTYzMWU1NGNlODNmN2JmZjQwZjY3OTMzNjFmZTAiLCAiZXhwIjogIjIwMjUtMTEtMTMgMTQ6NTg6MzAifSwgInNpZyI6ICIzMThlZDlkZGI2NDEzYWUyYTc0OWJhNzlhMTcyYTU5MmRjNjZmYWIzMWI1NTZlOTgwNzhhMDNlNjhkNDcyNzdhIn0=
-
-🔒 Действителен 7 дней.
-
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py main.py
-❌ Лицензия не найдена или недействительна!
-Ваш HWID: dcb0705ec90324c44aaa4433fd27d85f0345699b00533769d498045a72c5b497
-Введите ключ активации: eyJkYXRhIjogeyJod2lkIjogIjc4OTQ5NDZlOGM4YjU1MjFmNThlNmU4MDlmYzMwNTFkOGE0NTYzMWU1NGNlODNmN2JmZjQwZjY3OTMzNjFmZTAiLCAiZXhwIjogIjIwMjUtMTEtMTMgMTQ6NTg6MzAifSwgInNpZyI6ICIzMThlZDlkZGI2NDEzYWUyYTc0OWJhNzlhMTcyYTU5MmRjNjZmYWIzMWI1NTZlOTgwNzhhMDNlNjhkNDcyNzdhIn0=
-Неверный ключ!
-
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py main.py
-Traceback (most recent call last):
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\main.py", line 7, in <module>
-    from core.license_manager import LicenseManager
-ImportError: cannot import name 'LicenseManager' from 'core.license_manager' (C:\Users\andre\OneDrive\Рабочий стол\Новая папка\core\license_manager.py). Did you mean: 'license_manager'?
-
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py main.py
-Traceback (most recent call last):
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\main.py", line 47, in <module>
+if __name__ == "__main__":
     main()
-    ~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\main.py", line 33, in main
-    if not license_manager.ensure_license_interactive():
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\core\license_manager.py", line 169, in ensure_license_interactive
-    res, reason = show_activation_dialog()
-                  ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\core\license_manager.py", line 143, in show_activation_dialog
-    ok, info = verify_token_and_compute_expire(token)
-               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\core\license_manager.py", line 61, in verify_token_and_compute_expire
-    if not hashlib.compare_digest(expected, sig):
-           ^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: module 'hashlib' has no attribute 'compare_digest'
-
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>
