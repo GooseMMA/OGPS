@@ -1,174 +1,47 @@
-# core/license_manager.py
+import sys
 import os
-import json
-import base64
-import hashlib
-from datetime import datetime, timezone
-from PyQt5.QtWidgets import QMessageBox, QInputDialog
-from core.hwid import get_hwid
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QMessageBox
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 
-APPDATA = os.getenv('APPDATA') or '.'
-BASE_DIR = os.path.join(APPDATA, 'GameHelper_prototype')   # путь где храним лицензию (совместим с README)
-os.makedirs(BASE_DIR, exist_ok=True)
-LICENSE_FILE = os.path.join(BASE_DIR, 'license.bin')
-
-# !!! ВАЖНО: SECRET должен совпадать с тем, что использован в admin/keygen.py
-# по умолчанию в keygen.py я ранее предложил "SUPER_SECRET_KEY"
-_SECRET = "SUPER_SECRET_KEY"
+# Импортируем систему лицензий
+from core import license_manager
 
 
-def _compute_sig_from_payload(payload_dict):
-    """
-    payload_dict: структура payload (dict) например {"hwid": "...", "exp": "2025-11-13 14:58:30"}
-    Возвращает hex sha256 подпись как это делает keygen.py
-    """
-    data_str = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True)
-    return hashlib.sha256((data_str + _SECRET).encode()).hexdigest()
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("AutoClicker PRO")
+        self.setGeometry(600, 300, 600, 400)
+        self.setStyleSheet("background-color: #121212; color: white;")
+
+        self.label = QLabel("✅ Добро пожаловать в AutoClicker PRO!", self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setFont(QFont("Segoe UI", 14))
+        self.label.setGeometry(50, 150, 500, 50)
+
+        self.show()
 
 
-def _decode_token(token_b64: str):
-    """
-    Декодирует Base64 токен, возвращает dict { "data": {...}, "sig": "..." }
-    Или выбрасывает Exception если невалиден.
-    """
-    try:
-        raw = base64.urlsafe_b64decode(token_b64.encode())
-        obj = json.loads(raw.decode())
-        return obj
-    except Exception as e:
-        raise ValueError(f"bad_token_format: {e}")
+def main():
+    app = QApplication(sys.argv)
+
+    # Проверяем лицензию перед запуском основного окна
+    if not license_manager.ensure_license_interactive():
+        QMessageBox.critical(None, "Ошибка лицензии",
+                             "❌ Лицензия недействительна или отсутствует.\n"
+                             "Перезапустите программу после активации.")
+        sys.exit(0)
+
+    # Если всё ок — запускаем GUI
+    window = MainWindow()
+    window.show()
+
+    sys.exit(app.exec_())
 
 
-def verify_token_and_compute_expire(token_b64: str):
-    """
-    Проверяет токен, возвращает (True, info) при успехе,
-    где info = {'hwid':..., 'expire_ts': int(unix seconds)}
-    При ошибке возвращает (False, reason_string)
-    """
-    try:
-        obj = _decode_token(token_b64)
-    except Exception as e:
-        return False, f"decode_error: {e}"
-
-    data = obj.get('data')
-    sig = obj.get('sig')
-    if not data or not sig:
-        return False, "token_missing_fields"
-
-    # Проверяем подпись
-    expected = _compute_sig_from_payload(data)
-    # Use constant-time compare
-    if not hashlib.compare_digest(expected, sig):
-        return False, "signature_mismatch"
-
-    # Проверяем HWID совпадает? (токен должен быть сгенерирован для target hwid)
-    hwid_in_token = data.get('hwid')
-    if not hwid_in_token:
-        return False, "no_hwid_in_token"
-
-    # Проверяем exp формат и значение
-    exp_str = data.get('exp')
-    if not exp_str:
-        return False, "no_exp_in_token"
-
-    try:
-        # exp в формате: "YYYY-mm-dd HH:MM:SS" (UTC)
-        dt = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
-        # treat as UTC
-        dt = dt.replace(tzinfo=timezone.utc)
-        expire_ts = int(dt.timestamp())
-    except Exception as e:
-        return False, f"bad_exp_format: {e}"
-
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-    if now_ts > expire_ts:
-        return False, "token_expired"
-
-    return True, {"hwid": hwid_in_token, "expire_ts": expire_ts}
-
-
-def save_local_license(token_b64: str):
-    """
-    Сохраняет токен локально (как строку). При чтении мы снова декодируем/проверяем.
-    """
-    with open(LICENSE_FILE, "w", encoding="utf-8") as f:
-        f.write(token_b64)
-
-
-def check_local_license():
-    """
-    Проверяет локально сохранённую лицензию.
-    Возвращает (True, info) если валидна, иначе (False, reason_dict).
-    info содержит expire_ts.
-    """
-    if not os.path.exists(LICENSE_FILE):
-        return False, {"reason": "no_license"}
-
-    try:
-        with open(LICENSE_FILE, "r", encoding="utf-8") as f:
-            token_b64 = f.read().strip()
-        ok, info = verify_token_and_compute_expire(token_b64)
-        if not ok:
-            return False, {"reason": info}
-        # проверим HWID совпадает с текущим (локальная привязка)
-        local_hwid = get_hwid()
-        if info.get("hwid") != local_hwid:
-            return False, {"reason": "hwid_mismatch"}
-        # проверили срок ещё раз для надёжности
-        now_ts = int(datetime.now(timezone.utc).timestamp())
-        if now_ts > info.get("expire_ts"):
-            return False, {"reason": "expired", "expire": info.get("expire_ts")}
-        return True, {"expire": info.get("expire_ts")}
-    except Exception as e:
-        return False, {"reason": "check_error", "error": str(e)}
-
-
-def show_activation_dialog():
-    """
-    Показывает диалог активации (Qt): показывает HWID и просит вставить токен.
-    Если token корректный — сохраняет локально.
-    """
-    hwid = get_hwid()
-    # show hwid + instruction
-    msg = QMessageBox()
-    msg.setWindowTitle("Активация лицензии")
-    msg.setText(f"HWID для активации (скопируйте и отправьте администратору):\n\n{hwid}\n\nВставьте полученный токен ниже:")
-    msg.exec_()
-
-    token, ok = QInputDialog.getText(None, "Активация", "Вставьте токен (полученный у администратора):")
-    if not ok or not token:
-        return False, "no_token_entered"
-
-    token = token.strip()
-    ok, info = verify_token_and_compute_expire(token)
-    if not ok:
-        return False, info
-
-    # проверяем hwid совпадает
-    if info.get("hwid") != hwid:
-        return False, "hwid_mismatch"
-
-    # токен хорош — сохраняем локально
-    try:
-        save_local_license(token)
-        QMessageBox.information(None, "Активация", "Лицензия успешно активирована. Перезапустите приложение.")
-        return True, "activated"
-    except Exception as e:
-        return False, f"save_failed: {e}"
-
-
-def ensure_license_interactive():
-    """
-    Утилита для main.py: если лицензия не валидна — открываем диалог активации.
-    Возвращает True если ок (лицензия валидна после проверки/активации), иначе False.
-    """
-    ok, info = check_local_license()
-    if ok:
-        return True
-    # попытка активировать
-    res, reason = show_activation_dialog()
-    if res:
-        # после успешной активации, проверить ещё раз
-        ok2, info2 = check_local_license()
-        return ok2
-    return False
+if __name__ == "__main__":
+    main()
