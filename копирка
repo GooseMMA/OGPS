@@ -1,70 +1,30 @@
-#!/usr/bin/env python
-# admin/keygen.py
-# Генератор ключей: пытается взять секрет из core/license_manager.py, иначе предлагает ввести вручную.
-
-import sys, os, json, base64, argparse, hashlib, hmac
+import json
+import base64
+import hmac
+import hashlib
 from datetime import datetime, timedelta
+import argparse
 
-# Попробуем импортировать секрет из core/license_manager, если он там есть
-secret_bytes = None
-try:
-    # добавляем корень проекта в sys.path на всякий случай
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    import core.license_manager as lm_mod
-    # возможные имена переменных в файле с лицензиями
-    for name in ("SECRET_KEY", "_SECRET", "SECRET", "SECRET_BYTES", "SECRET_KEY_BYTES"):
-        if hasattr(lm_mod, name):
-            val = getattr(lm_mod, name)
-            if isinstance(val, bytes):
-                secret_bytes = val
-            elif isinstance(val, str):
-                secret_bytes = val.encode()
-            break
-except Exception:
-    secret_bytes = None
+SECRET_KEY = b"UltraSecretKeyForSignature_v1"
 
-# fallback builtin (тестовый) — изменяй тут если хочешь
-FALLBACK_SECRET = b"UltraSecretKeyForSignature_v1"
+def sign_data(data: str) -> str:
+    return hmac.new(SECRET_KEY, data.encode(), hashlib.sha256).hexdigest()
 
-def sign_data(secret: bytes, raw: str) -> str:
-    return hmac.new(secret, raw.encode(), hashlib.sha256).hexdigest()
-
-def encode_token(secret: bytes, hwid: str, days: int, activation_window_days: int = 30) -> str:
+def encode_token(hwid: str, days: int):
     expires = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     payload = {"hwid": hwid, "exp": expires}
-    raw = json.dumps(payload, separators=(',',':'))
-    sig = sign_data(secret, raw)
-    token_obj = {"data": payload, "sig": sig}
-    token_b64 = base64.b64encode(json.dumps(token_obj, separators=(',',':')).encode()).decode()
-    return token_b64
-
-def main():
-    parser = argparse.ArgumentParser(description="Admin license key generator (uses core/license_manager secret if available)")
-    parser.add_argument("--days", type=int, default=7, help="Количество дней действия лицензии (по активации)")
-    parser.add_argument("--hwid", type=str, required=True, help="HWID цели (укажи HWID пользователя)")
-    parser.add_argument("--window", type=int, default=30, help="Activation window (days) — необязательно")
-    args = parser.parse_args()
-
-    # выберем секрет
-    secret = secret_bytes
-    if secret is None:
-        print("⚠ Не удалось автоматически получить секрет из core/license_manager.py")
-        print("  Варианты: 1) убедись, что core/license_manager.py содержит SECRET_KEY или _SECRET;")
-        print("           2) введи секрет вручную; 3) используй запасной тестовый (не безопасно для прода).")
-        answer = input("Введите 'm' чтобы ввести секрет вручную, Enter чтобы использовать запасной: ").strip().lower()
-        if answer == 'm':
-            s = input("Вставь секрет (строку): ").strip()
-            secret = s.encode()
-        else:
-            secret = FALLBACK_SECRET
-            print("Используется запасной секрет (FALLBACK). Для продакшена замените на настоящий секрет.")
-
-    token = encode_token(secret, args.hwid, args.days, activation_window_days=args.window)
-    print("\\n✅ Сгенерирован токен:")
-    print(token)
-    print(f"🔒 Действителен {args.days} дней (с момента активации).")
+    raw = json.dumps(payload)
+    sig = sign_data(raw)
+    token = {"data": payload, "sig": sig}
+    encoded = base64.b64encode(json.dumps(token).encode()).decode()
+    return encoded, expires
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Генератор лицензионных ключей")
+    parser.add_argument("--hwid", required=True, help="Уникальный HWID пользователя")
+    parser.add_argument("--days", type=int, default=7, help="Срок действия (в днях)")
+    args = parser.parse_args()
+
+    token, exp = encode_token(args.hwid, args.days)
+
+    print(f"\n✅ Сгенерирован токен:\n{token}\n🔒 Действителен до {exp}\n")
