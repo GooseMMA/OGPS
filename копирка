@@ -1,24 +1,69 @@
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>py testV1.py
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py:9: SyntaxWarning: invalid escape sequence '\G'
-  - Profiles saved in %APPDATA%\GameHelperConfigs\window and ...\simple
-Traceback (most recent call last):
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py", line 923, in <module>
-    main()
-    ~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py", line 918, in main
-    w = MainWindow()
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py", line 833, in __init__
-    self._build_ui()
-    ~~~~~~~~~~~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py", line 839, in _build_ui
-    self.window_widget = WindowClickerWidget()
-                         ~~~~~~~~~~~~~~~~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py", line 342, in __init__
-    self._build_ui()
-    ~~~~~~~~~~~~~~^^
-  File "C:\Users\andre\OneDrive\Рабочий стол\Новая папка\testV1.py", line 354, in _build_ui
-    header_btn.clicked.connect(self.parent().create_hud_if_needed)
-                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'NoneType' object has no attribute 'create_hud_if_needed'
+import os, time, hashlib, uuid, json
+from cryptography.fernet import Fernet
 
-C:\Users\andre\OneDrive\Рабочий стол\Новая папка>
+class LicenseManager:
+    def __init__(self):
+        self.APPDATA = os.getenv('APPDATA') + "\\GameHelper\\license"
+        if not os.path.exists(self.APPDATA):
+            os.makedirs(self.APPDATA)
+        self.license_file = os.path.join(self.APPDATA, "active_license.bin")
+
+        # Генерация ключа шифрования (в реальном проекте ключ зашивается в код)
+        self._key = Fernet.generate_key()
+        self._fernet = Fernet(self._key)
+
+    # Получение HWID (железный идентификатор)
+    def get_hwid(self):
+        raw = str(uuid.getnode()) + str(uuid.uuid1())
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    # Генерация токена лицензии (HWID + срок действия)
+    def generate_license(self, hwid=None, days=7):
+        if hwid is None:
+            hwid = self.get_hwid()
+        expiry = int(time.time()) + days * 24 * 60 * 60
+        token = f"{hwid}:{expiry}"
+        encrypted = self._fernet.encrypt(token.encode())
+        return encrypted.decode()
+
+    # Проверка, действительна ли лицензия
+    def check_license(self):
+        if not os.path.exists(self.license_file):
+            return False
+
+        try:
+            with open(self.license_file, 'rb') as f:
+                data = f.read()
+            decrypted = self._fernet.decrypt(data).decode()
+            hwid, expiry = decrypted.split(':')
+            if hwid != self.get_hwid():
+                return False
+            if int(expiry) < int(time.time()):
+                return False
+            return True
+        except Exception as e:
+            print("Ошибка проверки лицензии:", e)
+            return False
+
+    # Сохранение лицензии
+    def save_license(self, license_str: str):
+        with open(self.license_file, 'wb') as f:
+            f.write(license_str.encode())
+
+    # Проверка и запрос новой лицензии
+    def ensure_license(self):
+        if not self.check_license():
+            print("❌ Лицензия не найдена или недействительна!")
+            hwid = self.get_hwid()
+            print(f"Ваш HWID: {hwid}")
+            code = input("Введите ключ активации: ").strip()
+            try:
+                # Проверим, что ключ корректный
+                self._fernet.decrypt(code.encode())
+                self.save_license(code)
+                print("✅ Лицензия активирована! Перезапустите программу.")
+                return False
+            except Exception:
+                print("Неверный ключ!")
+                return False
+        return True
