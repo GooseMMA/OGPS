@@ -1,8 +1,10 @@
-a = int(input())
-b = int(input())
+n = int(input())
 
-# Решето до b
-N = b
+left = n * n
+right = (n + 1) * (n + 1)
+
+# Решето строим до right
+N = right
 primes = [i for i in range(N + 1)]
 primes[1] = 0
 i = 2
@@ -14,23 +16,11 @@ while i <= N:
             j += i
     i += 1
 
-best = -1
-num = a
-while num <= b:
+count = 0
+num = left
+while num <= right:
     if primes[num] != 0:
-        temp = num
-        even = 0
-        odd = 0
-        while temp > 0:
-            digit = temp % 10
-            if digit % 2 == 0:
-                even += 1
-            else:
-                odd += 1
-            temp = temp // 10
-        if even == odd:
-            if num > best:
-                best = num
+        count += 1
     num += 1
 
-print(best)
+print(count)
