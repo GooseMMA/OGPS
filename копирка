@@ -1,0 +1,36 @@
+a = int(input())
+b = int(input())
+
+# Решето до b
+N = b
+primes = [i for i in range(N + 1)]
+primes[1] = 0
+i = 2
+while i <= N:
+    if primes[i] != 0:
+        j = i + i
+        while j <= N:
+            primes[j] = 0
+            j += i
+    i += 1
+
+best = -1
+num = a
+while num <= b:
+    if primes[num] != 0:
+        temp = num
+        even = 0
+        odd = 0
+        while temp > 0:
+            digit = temp % 10
+            if digit % 2 == 0:
+                even += 1
+            else:
+                odd += 1
+            temp = temp // 10
+        if even == odd:
+            if num > best:
+                best = num
+    num += 1
+
+print(best)
