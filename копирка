@@ -80,7 +80,7 @@ def enable_buttons():
 # === GUI ===
 root = tk.Tk()
 root.title("Игра Баше")
-root.geometry("330x360")
+root.geometry("330x600")
 
 title = tk.Label(root, text="Игра Баше\n(не брать последний камень)", font=("Arial", 16))
 title.pack(pady=5)
