@@ -1,36 +1,85 @@
+import tkinter as tk
 import random
 
 stones = 15
 k = 3
+level = 2  # умный бот по умолчанию
+player_turn = random.choice([True, False])
 
-print("Уровень робота: 1 - лёгкий, 2 - умный")
-level = int(input("Выберите уровень: "))
+def update_label(text=""):
+    info["text"] = f"Камней: {stones}\n{text}"
 
-while stones > 0:
-    print(f"\nВ куче {stones} камней.")
-    
-    # ход игрока
-    move = int(input("Ваш ход (1-3): "))
-    while move < 1 or move > k or move > stones:
-        move = int(input("Неверно, попробуйте ещё раз (1-3): "))
-    stones -= move
+def bot_move():
+    global stones, player_turn
+
     if stones == 0:
-        print("Вы взяли последний камень — вы проиграли!")
-        break
+        update_label("Бот проиграл — вы победили!")
+        return
 
-    # ход робота
-    print(f"\nХод робота...")
     if level == 1:
-        bot = random.randint(1, min(k, stones))
+        take = random.randint(1, min(k, stones))
     else:
-        # умный ход
         if stones % (k+1) == 0:
-            bot = random.randint(1, min(k, stones))  # если позиция проигрышная — рандом
+            take = random.randint(1, min(k, stones))
         else:
-            bot = stones % (k+1)
-    print(f"Робот взял: {bot}")
-    stones -= bot
+            take = stones % (k+1)
+
+    stones -= take
+    update_label(f"Бот взял: {take}")
 
     if stones == 0:
-        print("Робот взял последний камень — вы выиграли!")
-        break
+        update_label("Бот взял последний камень — вы проиграли!")
+        disable_buttons()
+        return
+
+    player_turn = True
+
+def player_move(take):
+    global stones, player_turn
+
+    if not player_turn or stones == 0:
+        return
+
+    if take > stones:
+        return
+
+    stones -= take
+
+    if stones == 0:
+        update_label("Вы взяли последний камень — вы проиграли!")
+        disable_buttons()
+        return
+
+    player_turn = False
+    update_label(f"Вы взяли: {take}")
+    root.after(600, bot_move)
+
+
+def disable_buttons():
+    for b in buttons:
+        b["state"] = "disabled"
+
+
+# === GUI ===
+root = tk.Tk()
+root.title("Игра Баше")
+root.geometry("300x250")
+
+info = tk.Label(root, font=("Arial", 16))
+info.pack(pady=15)
+
+buttons = []
+for i in range(1, 4):
+    b = tk.Button(root, text=f"Взять {i}", font=("Arial", 14),
+                  command=lambda x=i: player_move(x))
+    b.pack(pady=2)
+    buttons.append(b)
+
+first = "Вы начинаете!" if player_turn else "Бот начинает!"
+update_label(first)
+
+# если бот ходит первым
+if not player_turn:
+    root.after(800, bot_move)
+
+root.mainloop()
