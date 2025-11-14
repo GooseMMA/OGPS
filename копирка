@@ -6,32 +6,46 @@ k = 3
 level = 2  # умный бот по умолчанию
 player_turn = random.choice([True, False])
 
+def start_game():
+    global level, stones, player_turn
+    stones = 15
+    player_turn = random.choice([True, False])
+    level = int(level_var.get())
+    enable_buttons()
+    update_label("Начинаем!\n" + ("Вы ходите" if player_turn else "Бот ходит"))
+    if not player_turn:
+        root.after(800, bot_move)
+
 def update_label(text=""):
-    info["text"] = f"Камней: {stones}\n{text}"
+    info["text"] = f"Камней: {stones}\n\n{text}"
 
 def bot_move():
     global stones, player_turn
 
     if stones == 0:
-        update_label("Бот проиграл — вы победили!")
+        update_label("Бот взял последний камень.\nВы победили!")
+        disable_buttons()
         return
 
     if level == 1:
         take = random.randint(1, min(k, stones))
     else:
-        if stones % (k+1) == 0:
-            take = random.randint(1, min(k, stones))
-        else:
-            take = stones % (k+1)
+        # идеальная стратегия (не брать последний)
+        # нужно оставлять 1, 5, 9, 13...
+        target = (stones - 1) % (k + 1)
+        take = target if target != 0 else random.randint(1, min(k, stones))
+
+    if take > stones:
+        take = stones
 
     stones -= take
-    update_label(f"Бот взял: {take}")
 
     if stones == 0:
-        update_label("Бот взял последний камень — вы проиграли!")
+        update_label("Бот взял последний камень.\nВы победили!")
         disable_buttons()
         return
 
+    update_label(f"Бот взял: {take}\nВаш ход")
     player_turn = True
 
 def player_move(take):
@@ -46,40 +60,63 @@ def player_move(take):
     stones -= take
 
     if stones == 0:
-        update_label("Вы взяли последний камень — вы проиграли!")
+        update_label("Вы взяли последний камень.\nВы проиграли!")
         disable_buttons()
         return
 
     player_turn = False
-    update_label(f"Вы взяли: {take}")
+    update_label(f"Вы взяли: {take}\nХод бота")
     root.after(600, bot_move)
-
 
 def disable_buttons():
     for b in buttons:
         b["state"] = "disabled"
 
+def enable_buttons():
+    for b in buttons:
+        b["state"] = "normal"
+
 
 # === GUI ===
 root = tk.Tk()
 root.title("Игра Баше")
-root.geometry("300x250")
+root.geometry("330x360")
 
-info = tk.Label(root, font=("Arial", 16))
-info.pack(pady=15)
+title = tk.Label(root, text="Игра Баше\n(не брать последний камень)", font=("Arial", 16))
+title.pack(pady=5)
+
+frame = tk.Frame(root)
+frame.pack()
+
+info = tk.Label(frame, font=("Arial", 14), justify="center")
+info.pack(pady=10)
+
+btn_frame = tk.Frame(frame)
+btn_frame.pack()
 
 buttons = []
 for i in range(1, 4):
-    b = tk.Button(root, text=f"Взять {i}", font=("Arial", 14),
+    b = tk.Button(btn_frame, text=f"Взять {i}", font=("Arial", 14), width=12,
                   command=lambda x=i: player_move(x))
-    b.pack(pady=2)
+    b.pack(pady=3)
     buttons.append(b)
 
-first = "Вы начинаете!" if player_turn else "Бот начинает!"
-update_label(first)
+# выбор уровня сложности
+level_var = tk.StringVar(value="2")
+level_frame = tk.Frame(root)
+level_frame.pack(pady=10)
 
-# если бот ходит первым
-if not player_turn:
-    root.after(800, bot_move)
+tk.Label(level_frame, text="Уровень бота:", font=("Arial", 12)).pack()
+
+tk.Radiobutton(level_frame, text="Лёгкий", value="1",
+               variable=level_var, font=("Arial", 12)).pack(anchor="w")
+tk.Radiobutton(level_frame, text="Сложный", value="2",
+               variable=level_var, font=("Arial", 12)).pack(anchor="w")
+
+start_button = tk.Button(root, text="Начать новую игру",
+                         font=("Arial", 14), command=start_game)
+start_button.pack(pady=12)
+
+update_label("Нажмите 'Начать новую игру'")
 
 root.mainloop()
