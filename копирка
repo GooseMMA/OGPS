@@ -1,93 +1,76 @@
 import cv2
 import numpy as np
-import time
-import os
 import mss
+import threading
+import time
 
-# === НАСТРОЙКА: HSV-диапазон для воды ===
-LOWER_HSV_WATER = np.array([85, 60, 60])
-UPPER_HSV_WATER = np.array([115, 255, 255])
+# HSV диапазон воды
+LOWER = np.array([85, 60, 60])
+UPPER = np.array([115, 255, 255])
 
-# === НАСТРОЙКА: Путь к шаблонам ===
-TEMPLATE_DIR = "templates"
+# Глобальная переменная кадра
+latest_frame = None
+processed_frame = None
 
-# === Быстрая загрузка шаблонов ===
-templates = []
-for filename in os.listdir(TEMPLATE_DIR):
-    if filename.endswith(".png") or filename.endswith(".jpg"):
-        path = os.path.join(TEMPLATE_DIR, filename)
-        img = cv2.imread(path)
-        if img is not None:
-            templates.append((cv2.resize(img, (0, 0), fx=0.5, fy=0.5), img.shape[:2]))
+# ===== ПОТОК ЗАХВАТА =====
+def capture_thread():
+    global latest_frame
+    sct = mss.mss()
 
-if not templates:
-    raise FileNotFoundError("В папке templates нет изображений!")
+    while True:
+        img = sct.grab(sct.monitors[1])
+        frame = np.array(img)[:, :, :3]  # BGR, цвета НЕ ИСПОРЧЕНЫ
+        latest_frame = frame
 
 
-def detect_and_draw(frame):
-    """Ускоренная обработка кадра"""
-    # уменьшаем для ускорения в 2 раза
-    scale = 0.5
-    small = cv2.resize(frame, (0,0), fx=scale, fy=scale)
+# ===== ПОТОК ОБРАБОТКИ =====
+def processing_thread():
+    global latest_frame, processed_frame
 
-    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, LOWER_HSV_WATER, UPPER_HSV_WATER)
-
-    # Морфология
     kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    # Контуры воды
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for cnt in contours:
-        if cv2.contourArea(cnt) > 2000:
-            cv2.drawContours(small, [cnt], -1, (0, 255, 0), 2)
+    while True:
+        if latest_frame is None:
+            continue
 
-    # Поиск шаблонов (ускоренный)
-    best_val = 0
-    best_loc = None
-    best_w = best_h = 0
+        frame = latest_frame
 
-    for temp, (h, w) in templates:
-        result = cv2.matchTemplate(small, temp, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        # уменьшение для скорости
+        small = cv2.resize(frame, (0,0), fx=0.5, fy=0.5)
 
-        if max_val > best_val:
-            best_val = max_val
-            best_loc = max_loc
-            best_w, best_h = w//2, h//2
+        hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, LOWER, UPPER)
 
-    if best_val > 0.55:
-        top_left = best_loc
-        bottom_right = (top_left[0] + best_w, top_left[1] + best_h)
-        cv2.rectangle(small, top_left, bottom_right, (0, 0, 255), 2)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    return small
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            if cv2.contourArea(cnt) > 2000:
+                cv2.drawContours(small, [cnt], -1, (0, 255, 0), 2)
+
+        processed_frame = small
 
 
-# === ОСНОВНОЙ ЦИКЛ ===
-print("Оптимизированный режим запущен (FPS ↑).")
+# ===== ЗАПУСК ПОТОКОВ =====
+t1 = threading.Thread(target=capture_thread, daemon=True)
+t2 = threading.Thread(target=processing_thread, daemon=True)
+t1.start()
+t2.start()
 
-window = "Albion FAST MODE"
-cv2.namedWindow(window, cv2.WINDOW_AUTOSIZE)
-cv2.setWindowProperty(window, cv2.WND_PROP_TOPMOST, 1)
+cv2.namedWindow("FAST", cv2.WINDOW_NORMAL)
 
-sct = mss.mss()
+last_time = time.time()
 
 while True:
-    start = time.time()
+    if processed_frame is not None:
+        cv2.imshow("FAST", processed_frame)
 
-    # Быстрый захват экрана
-    screenshot = sct.grab(sct.monitors[1])
-    frame = np.array(screenshot)[:, :, :3]  # убираем альфа-канал
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    result = detect_and_draw(frame)
-
-    cv2.imshow(window, result)
-
-    fps = 1 / (time.time() - start)
-    print(f"FPS: {fps:.1f}", end="\r")
+        # FPS вывод
+        now = time.time()
+        fps = 1 / (now - last_time)
+        last_time = now
+        print(f"FPS: {fps:.1f}", end="\r")
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
