@@ -4,100 +4,273 @@ import mss
 import threading
 import time
 import os
+import queue
+import concurrent.futures
+import multiprocessing
+import traceback
 
-# ===== HSV вода =====
+# ----------------- НАСТРОЙКИ -----------------
+TEMPLATE_DIR = "templates"
 LOWER = np.array([85, 60, 60])
 UPPER = np.array([115, 255, 255])
 
-# ===== Загрузка шаблонов (оригинал) =====
-templates = []
-TEMPLATE_DIR = "templates"
+# Ограничения для очереди (не даёт накопить много кадров в RAM)
+MAX_QUEUE_SIZE = 3
 
-for filename in os.listdir(TEMPLATE_DIR):
-    if filename.endswith(".png") or filename.endswith(".jpg"):
-        path = os.path.join(TEMPLATE_DIR, filename)
-        img = cv2.imread(path)
-        if img is not None:
-            templates.append((img, img.shape[1], img.shape[0], filename))
+# Максимум воркеров для CPU (не перегружаем систему)
+MAX_WORKERS = 4
+
+# Порог уверенности для matchTemplate
+TEMPLATE_THRESH = 0.65
+
+# Масштаб при работе в ROI (уменьшаем, чтобы matchTemplate работал быстрее, но осторожно)
+ROI_SCALE = 1.0  # 1.0 = оригинал ROI, можно попробовать 0.75 или 0.5 если шаблоны меньше
+
+# ------------------------------------------------
+
+# Логирование простое
+def log(*args):
+    print("[", time.strftime("%H:%M:%S"), "]", *args)
+
+# ---------- Проверка GPU (cv2.cuda) ----------
+use_cuda = False
+try:
+    cuda_count = cv2.cuda.getCudaEnabledDeviceCount()
+    if cuda_count > 0:
+        use_cuda = True
+        log(f"CUDA devices: {cuda_count} — попытаемся использовать GPU для matchTemplate")
+    else:
+        log("CUDA устройства не найдены в системе / OpenCV не собран с CUDA.")
+except Exception:
+    log("cv2.cuda недоступен (OpenCV, вероятно, без CUDA). Будем использовать CPU.")
+    use_cuda = False
+
+# ---------- Загрузка шаблонов ----------
+templates = []
+if not os.path.isdir(TEMPLATE_DIR):
+    raise FileNotFoundError(f"Папка шаблонов не найдена: {TEMPLATE_DIR}")
+
+for fn in os.listdir(TEMPLATE_DIR):
+    if fn.lower().endswith((".png", ".jpg", ".jpeg")):
+        p = os.path.join(TEMPLATE_DIR, fn)
+        t = cv2.imread(p)
+        if t is None:
+            log("Не удалось загрузить шаблон:", p)
+            continue
+        templates.append((t, t.shape[1], t.shape[0], fn))
 
 if not templates:
-    raise FileNotFoundError("В папке templates нет картинок!")
+    raise FileNotFoundError("Шаблоны не загружены. Положи фотографии в папку 'templates'.")
 
+log(f"Загружено шаблонов: {len(templates)}")
 
-latest_frame = None
-processed_frame = None
+# ---------- Очередь и глобалы ----------
+frame_queue = queue.Queue(maxsize=MAX_QUEUE_SIZE)  # для raw кадров
+display_frame = None
+stop_event = threading.Event()
 
-
-# ================= ПОТОК ЗАХВАТА ==================
-def capture_thread():
-    global latest_frame
+# ---------- Захват экрана (производительный, один поток) ----------
+def capture_loop(monitor_index=1):
     sct = mss.mss()
+    while not stop_event.is_set():
+        try:
+            img = sct.grab(sct.monitors[monitor_index])
+            frame = np.array(img)[:, :, :3]  # BGR
+            # Небольшая защита от переполнения: если очередь полна, удаляем старый кадр
+            try:
+                frame_queue.put(frame, timeout=0.01)
+            except queue.Full:
+                try:
+                    _ = frame_queue.get_nowait()  # выбросить самый старый
+                except Exception:
+                    pass
+                try:
+                    frame_queue.put(frame, timeout=0.01)
+                except Exception:
+                    pass
+        except Exception as e:
+            log("Ошибка в capture_loop:", e)
+            time.sleep(0.05)
 
-    while True:
-        img = sct.grab(sct.monitors[1])
-        frame = np.array(img)[:, :, :3]  # BGR
-        latest_frame = frame
+# ---------- Функции поиска шаблона ----------
+# CPU вариант: классический matchTemplate на ROI
+def match_template_cpu(roi_bgr, template_bgr):
+    # roi_bgr и template_bgr — BGR numpy arrays
+    try:
+        res = cv2.matchTemplate(roi_bgr, template_bgr, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        return max_val, max_loc
+    except Exception as e:
+        log("Ошибка CPU match:", e)
+        return 0.0, (0,0)
 
+# GPU вариант (если доступен). Используем cv2.cuda
+def match_template_gpu(roi_bgr, template_bgr):
+    try:
+        # Конвертируем в GPU-материалы (BGR -> gray предпочтительнее для скорости/памяти)
+        roi_gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
+        tpl_gray = cv2.cvtColor(template_bgr, cv2.COLOR_BGR2GRAY)
 
-# ================= ПОТОК ОБРАБОТКИ ==================
-def processing_thread():
-    global latest_frame, processed_frame
+        gpu_roi = cv2.cuda_GpuMat()
+        gpu_tpl = cv2.cuda_GpuMat()
+        gpu_roi.upload(roi_gray)
+        gpu_tpl.upload(tpl_gray)
 
-    kernel = np.ones((5, 5), np.uint8)
+        # matchTemplate на GPU (некоторые сборки OpenCV имеют эту функцию)
+        gpu_res = cv2.cuda.createTemplateMatching(gpu_roi.type(), cv2.TM_CCOEFF_NORMED)
+        gpu_result = gpu_res.match(gpu_roi, gpu_tpl)  # результат — GpuMat
 
-    while True:
-        if latest_frame is None:
-            continue
+        result = gpu_result.download()
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        return max_val, max_loc
+    except Exception as e:
+        # если что-то пошло не так, логируем и падаем обратно на CPU
+        log("Ошибка GPU match (fallback to CPU):", e)
+        return 0.0, (0,0)
 
-        frame = latest_frame.copy()
+# Обёртка: выбираем GPU или CPU
+def match_template(roi_bgr, template_bgr):
+    if use_cuda:
+        val, loc = match_template_gpu(roi_bgr, template_bgr)
+        # Если GPU вернул нулевой результат или упал, попробуем CPU (без исключений)
+        if val is None or val == 0.0:
+            return match_template_cpu(roi_bgr, template_bgr)
+        return val, loc
+    else:
+        return match_template_cpu(roi_bgr, template_bgr)
 
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, LOWER, UPPER)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+# ---------- Предобработка + распределение задач по воркерам ----------
+def processing_loop():
+    global display_frame
+    # Определяем число воркеров, не более CPU_COUNT - 1
+    cpu_count = multiprocessing.cpu_count()
+    workers = max(1, min(MAX_WORKERS, max(1, cpu_count - 1)))
+    log(f"Запуск пулa воркеров: {workers} (CPU cores: {cpu_count})")
 
-        # --- Контуры воды ---
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        water_roi = None
-
-        for cnt in contours:
-            if cv2.contourArea(cnt) < 50000:  # вода, но не маленькие пятна
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        # futures -> результаты match'ов
+        while not stop_event.is_set():
+            try:
+                frame = frame_queue.get(timeout=0.1)
+            except queue.Empty:
                 continue
 
-            x, y, w, h = cv2.boundingRect(cnt)
-            water_roi = frame[y:y+h, x:x+w]
+            try:
+                # Быстрая предобработка: выделяем ROI воды на полном кадре
+                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+                mask = cv2.inRange(hsv, LOWER, UPPER)
+                kernel = np.ones((7,7), np.uint8)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            cv2.rectangle(frame, (x,y), (x+w, y+h), (0,255,0), 2)
-            break  # нам достаточно одного большого контура
+                # Ищем самый большой контур воды
+                best_cnt = None
+                max_area = 0
+                for cnt in contours:
+                    area = cv2.contourArea(cnt)
+                    if area > max_area:
+                        max_area = area
+                        best_cnt = cnt
 
-        # Если вода не найдена — пропускаем
-        if water_roi is None:
-            processed_frame = frame
-            continue
+                if best_cnt is None or max_area < 20000:
+                    # воды явно нет — просто отрисуем и покажем
+                    display_frame = frame
+                    continue
 
-        # ---- Ускоренный matchTemplate на ROI ----
-        best_val = 0
-        best_loc = None
-        best_w = best_h = 0
-        best_offset = (x, y)
+                x, y, w, h = cv2.boundingRect(best_cnt)
+                # Небольшое расширение ROI, но аккуратно
+                pad = 10
+                x1 = max(0, x - pad); y1 = max(0, y - pad)
+                x2 = min(frame.shape[1], x + w + pad); y2 = min(frame.shape[0], y + h + pad)
+                roi = frame[y1:y2, x1:x2]
 
-        for template, tw, th, _ in templates:
-            if water_roi.shape[0] < th or water_roi.shape[1] < tw:
-                continue
+                # При необходимости масштабируем ROI (уменьшение ускоряет поиск)
+                if ROI_SCALE != 1.0:
+                    roi_proc = cv2.resize(roi, (0,0), fx=ROI_SCALE, fy=ROI_SCALE, interpolation=cv2.INTER_AREA)
+                    scale_factor = ROI_SCALE
+                else:
+                    roi_proc = roi
+                    scale_factor = 1.0
 
-            result = cv2.matchTemplate(water_roi, template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                # Отправляем задачи на поиск по шаблонам (параллельно)
+                futures = []
+                for tpl, tw, th, name in templates:
+                    # если шаблон больше ROI — пропускаем
+                    if roi_proc.shape[0] < int(th * scale_factor) or roi_proc.shape[1] < int(tw * scale_factor):
+                        continue
+                    # Для экономии памяти — передаём небольшие копии
+                    tpl_resized = tpl if scale_factor == 1.0 else cv2.resize(tpl, (0,0), fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+                    futures.append(executor.submit(match_template, roi_proc, tpl_resized))
 
-            if max_val > best_val:
-                best_val = max_val
-                best_loc = max_loc
-                best_w = tw
-                best_h = th
+                # Собираем результаты
+                best_val = 0.0
+                best_loc = None
+                best_size = None
+                for fut, (tpl, tw, th, name) in zip(futures, [t for t in templates if roi_proc.shape[0] >= int(t[2]*scale_factor) and roi_proc.shape[1] >= int(t[1]*scale_factor)]):
+                    try:
+                        val, loc = fut.result(timeout=0.5)  # таймаут, чтобы не застрять
+                    except concurrent.futures.TimeoutError:
+                        log("Timeout при ожидании совпадения шаблона")
+                        continue
+                    except Exception as e:
+                        log("Исключение в задаче match:", e)
+                        continue
 
-        # --- Рисуем поплавок только если уверенность высокая ---
-        if best_val > 0.65:
-            px = best_loc[0] + best_offset[0]
-            py = best_loc[1] + best_offset[1]
-            cv2.rectangle(frame, (px, py), (px+best_w, py+best_h), (0,0,255), 2)
+                    if val > best_val:
+                        best_val = val
+                        best_loc = loc
+                        best_size = (int(tw*scale_factor), int(th*scale_factor))
+                        best_name = name
 
-        processed_frame = frame
+                # Нарисуем ROI и, если найдено — поплавок
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
+                if best_loc and best_val >= TEMPLATE_THRESH:
+                    bx = int(best_loc[0] / scale_factor) + x1
+                    by = int(best_loc[1] / scale_factor) + y1
+                    bw, bh = best_size
+                    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0,0,255), 2)
+                    cv2.putText(frame, f"{best_name} {best_val:.2f}", (bx, max(0,by-6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+
+                display_frame = frame
+
+            except Exception as e:
+                log("Ошибка в processing_loop:", e)
+                traceback.print_exc()
+                time.sleep(0.05)
+
+# ---------- Основной запуск ----------
+def main():
+    try:
+        t_cap = threading.Thread(target=capture_loop, daemon=True)
+        t_proc = threading.Thread(target=processing_loop, daemon=True)
+        t_cap.start()
+        t_proc.start()
+
+        cv2.namedWindow("Pipeline", cv2.WINDOW_NORMAL)
+        last_time = time.time()
+
+        while True:
+            if display_frame is not None:
+                cv2.imshow("Pipeline", display_frame)
+                # простой FPS
+                now = time.time()
+                fps = 1.0 / max(1e-6, (now - last_time))
+                last_time = now
+                # вывод в заголовок окна (может не сработать в некоторых окружениях)
+                try:
+                    cv2.setWindowTitle("Pipeline", f"Pipeline - FPS ~ {fps:.1f}")
+                except Exception:
+                    pass
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+
+    finally:
+        stop_event.set()
+        log("Выход... ждём завершения потоков.")
+        time.sleep(0.2)
+        cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
