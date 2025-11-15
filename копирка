@@ -1,122 +1,95 @@
-import tkinter as tk
-import random
+import cv2
+import numpy as np
+import time
+import os
+import mss
 
-stones = 15
-k = 3
-level = 2  # умный бот по умолчанию
-player_turn = random.choice([True, False])
+# === НАСТРОЙКА: HSV-диапазон для воды ===
+LOWER_HSV_WATER = np.array([85, 60, 60])
+UPPER_HSV_WATER = np.array([115, 255, 255])
 
-def start_game():
-    global level, stones, player_turn
-    stones = 15
-    player_turn = random.choice([True, False])
-    level = int(level_var.get())
-    enable_buttons()
-    update_label("Начинаем!\n" + ("Вы ходите" if player_turn else "Бот ходит"))
-    if not player_turn:
-        root.after(800, bot_move)
+# === НАСТРОЙКА: Путь к шаблонам ===
+TEMPLATE_DIR = "templates"
 
-def update_label(text=""):
-    info["text"] = f"Камней: {stones}\n\n{text}"
+# === Быстрая загрузка шаблонов ===
+templates = []
+for filename in os.listdir(TEMPLATE_DIR):
+    if filename.endswith(".png") or filename.endswith(".jpg"):
+        path = os.path.join(TEMPLATE_DIR, filename)
+        img = cv2.imread(path)
+        if img is not None:
+            templates.append((cv2.resize(img, (0, 0), fx=0.5, fy=0.5), img.shape[:2]))
 
-def bot_move():
-    global stones, player_turn
-
-    if stones == 0:
-        update_label("Бот взял последний камень.\nВы победили!")
-        disable_buttons()
-        return
-
-    if level == 1:
-        take = random.randint(1, min(k, stones))
-    else:
-        # идеальная стратегия (не брать последний)
-        # нужно оставлять 1, 5, 9, 13...
-        target = (stones - 1) % (k + 1)
-        take = target if target != 0 else random.randint(1, min(k, stones))
-
-    if take > stones:
-        take = stones
-
-    stones -= take
-
-    if stones == 0:
-        update_label("Бот взял последний камень.\nВы победили!")
-        disable_buttons()
-        return
-
-    update_label(f"Бот взял: {take}\nВаш ход")
-    player_turn = True
-
-def player_move(take):
-    global stones, player_turn
-
-    if not player_turn or stones == 0:
-        return
-
-    if take > stones:
-        return
-
-    stones -= take
-
-    if stones == 0:
-        update_label("Вы взяли последний камень.\nВы проиграли!")
-        disable_buttons()
-        return
-
-    player_turn = False
-    update_label(f"Вы взяли: {take}\nХод бота")
-    root.after(600, bot_move)
-
-def disable_buttons():
-    for b in buttons:
-        b["state"] = "disabled"
-
-def enable_buttons():
-    for b in buttons:
-        b["state"] = "normal"
+if not templates:
+    raise FileNotFoundError("В папке templates нет изображений!")
 
 
-# === GUI ===
-root = tk.Tk()
-root.title("Игра Баше")
-root.geometry("330x600")
+def detect_and_draw(frame):
+    """Ускоренная обработка кадра"""
+    # уменьшаем для ускорения в 2 раза
+    scale = 0.5
+    small = cv2.resize(frame, (0,0), fx=scale, fy=scale)
 
-title = tk.Label(root, text="Игра Баше\n(не брать последний камень)", font=("Arial", 16))
-title.pack(pady=5)
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, LOWER_HSV_WATER, UPPER_HSV_WATER)
 
-frame = tk.Frame(root)
-frame.pack()
+    # Морфология
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-info = tk.Label(frame, font=("Arial", 14), justify="center")
-info.pack(pady=10)
+    # Контуры воды
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for cnt in contours:
+        if cv2.contourArea(cnt) > 2000:
+            cv2.drawContours(small, [cnt], -1, (0, 255, 0), 2)
 
-btn_frame = tk.Frame(frame)
-btn_frame.pack()
+    # Поиск шаблонов (ускоренный)
+    best_val = 0
+    best_loc = None
+    best_w = best_h = 0
 
-buttons = []
-for i in range(1, 4):
-    b = tk.Button(btn_frame, text=f"Взять {i}", font=("Arial", 14), width=12,
-                  command=lambda x=i: player_move(x))
-    b.pack(pady=3)
-    buttons.append(b)
+    for temp, (h, w) in templates:
+        result = cv2.matchTemplate(small, temp, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-# выбор уровня сложности
-level_var = tk.StringVar(value="2")
-level_frame = tk.Frame(root)
-level_frame.pack(pady=10)
+        if max_val > best_val:
+            best_val = max_val
+            best_loc = max_loc
+            best_w, best_h = w//2, h//2
 
-tk.Label(level_frame, text="Уровень бота:", font=("Arial", 12)).pack()
+    if best_val > 0.55:
+        top_left = best_loc
+        bottom_right = (top_left[0] + best_w, top_left[1] + best_h)
+        cv2.rectangle(small, top_left, bottom_right, (0, 0, 255), 2)
 
-tk.Radiobutton(level_frame, text="Лёгкий", value="1",
-               variable=level_var, font=("Arial", 12)).pack(anchor="w")
-tk.Radiobutton(level_frame, text="Сложный", value="2",
-               variable=level_var, font=("Arial", 12)).pack(anchor="w")
+    return small
 
-start_button = tk.Button(root, text="Начать новую игру",
-                         font=("Arial", 14), command=start_game)
-start_button.pack(pady=12)
 
-update_label("Нажмите 'Начать новую игру'")
+# === ОСНОВНОЙ ЦИКЛ ===
+print("Оптимизированный режим запущен (FPS ↑).")
 
-root.mainloop()
+window = "Albion FAST MODE"
+cv2.namedWindow(window, cv2.WINDOW_AUTOSIZE)
+cv2.setWindowProperty(window, cv2.WND_PROP_TOPMOST, 1)
+
+sct = mss.mss()
+
+while True:
+    start = time.time()
+
+    # Быстрый захват экрана
+    screenshot = sct.grab(sct.monitors[1])
+    frame = np.array(screenshot)[:, :, :3]  # убираем альфа-канал
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    result = detect_and_draw(frame)
+
+    cv2.imshow(window, result)
+
+    fps = 1 / (time.time() - start)
+    print(f"FPS: {fps:.1f}", end="\r")
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cv2.destroyAllWindows()
