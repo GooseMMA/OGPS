@@ -3,30 +3,53 @@ import numpy as np
 import mss
 import threading
 import time
+import os
 
-# HSV диапазон воды
+# ===== HSV ДИАПАЗОН ВОДЫ =====
 LOWER = np.array([85, 60, 60])
 UPPER = np.array([115, 255, 255])
 
-# Глобальная переменная кадра
+# ====== ЗАГРУЗКА ШАБЛОНОВ ORB ======
+orb = cv2.ORB_create(nfeatures=800)
+
+templates = []
+
+TEMPLATE_DIR = "templates"
+
+for filename in os.listdir(TEMPLATE_DIR):
+    if filename.endswith(".png") or filename.endswith(".jpg"):
+        path = os.path.join(TEMPLATE_DIR, filename)
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            continue
+        kp, des = orb.detectAndCompute(img, None)
+        templates.append((img, kp, des, filename))
+
+if not templates:
+    raise FileNotFoundError("В папке templates нет картинок!")
+
+
+# ===== ГЛОБАЛЬНЫЕ КАДРЫ =====
 latest_frame = None
 processed_frame = None
 
-# ===== ПОТОК ЗАХВАТА =====
+
+# ========== ПОТОК ЗАХВАТА ==========
 def capture_thread():
     global latest_frame
     sct = mss.mss()
 
     while True:
         img = sct.grab(sct.monitors[1])
-        frame = np.array(img)[:, :, :3]  # BGR, цвета НЕ ИСПОРЧЕНЫ
+        frame = np.array(img)[:, :, :3]  # BGR
         latest_frame = frame
 
 
-# ===== ПОТОК ОБРАБОТКИ =====
+# ========== ПОТОК ОБРАБОТКИ ==========
 def processing_thread():
     global latest_frame, processed_frame
 
+    matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     kernel = np.ones((5, 5), np.uint8)
 
     while True:
@@ -34,42 +57,66 @@ def processing_thread():
             continue
 
         frame = latest_frame
+        small = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
 
-        # уменьшение для скорости
-        small = cv2.resize(frame, (0,0), fx=0.5, fy=0.5)
-
+        # ======== Поиск воды ========
         hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, LOWER, UPPER)
-
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
         for cnt in contours:
             if cv2.contourArea(cnt) > 2000:
                 cv2.drawContours(small, [cnt], -1, (0, 255, 0), 2)
 
+        # ======== Поиск поплавков через ORB ========
+        gray_small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        kp2, des2 = orb.detectAndCompute(gray_small, None)
+
+        best_score = 0
+        best_box = None
+
+        if des2 is not None:
+            for temp_img, kp1, des1, name in templates:
+                matches = matcher.match(des1, des2)
+                matches = sorted(matches, key=lambda x: x.distance)
+
+                score = sum(1 for m in matches if m.distance < 50)
+
+                if score > best_score:
+                    best_score = score
+
+                    pts = np.float32([kp2[m.trainIdx].pt for m in matches if m.distance < 50])
+                    if len(pts) > 4:
+                        x, y, w, h = cv2.boundingRect(pts)
+                        best_box = (x, y, x + w, y + h)
+
+        # ====== Рисуем найденный поплавок ======
+        if best_box and best_score > 10:
+            x1, y1, x2, y2 = best_box
+            cv2.rectangle(small, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
         processed_frame = small
 
 
-# ===== ЗАПУСК ПОТОКОВ =====
+# ====== ЗАПУСК ======
 t1 = threading.Thread(target=capture_thread, daemon=True)
 t2 = threading.Thread(target=processing_thread, daemon=True)
+
 t1.start()
 t2.start()
 
 cv2.namedWindow("FAST", cv2.WINDOW_NORMAL)
 
-last_time = time.time()
+last = time.time()
 
 while True:
     if processed_frame is not None:
         cv2.imshow("FAST", processed_frame)
 
-        # FPS вывод
         now = time.time()
-        fps = 1 / (now - last_time)
-        last_time = now
+        fps = 1 / (now - last)
+        last = now
         print(f"FPS: {fps:.1f}", end="\r")
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
