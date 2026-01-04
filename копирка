@@ -1,276 +1,221 @@
-import cv2
-import numpy as np
-import mss
-import threading
-import time
-import os
-import queue
-import concurrent.futures
-import multiprocessing
-import traceback
+Отлично. Ниже — единый, чёткий PROMPT, который полностью описывает сайт Atlas.
+Его можно:
+	•	дать дизайнеру
+	•	дать другому ИИ
+	•	использовать как ТЗ
+	•	хранить как эталон
 
-# ----------------- НАСТРОЙКИ -----------------
-TEMPLATE_DIR = "templates"
-LOWER = np.array([85, 60, 60])
-UPPER = np.array([115, 255, 255])
+Без воды, без противоречий, всё согласовано с тем, что мы сделали.
 
-# Ограничения для очереди (не даёт накопить много кадров в RAM)
-MAX_QUEUE_SIZE = 3
+⸻
 
-# Максимум воркеров для CPU (не перегружаем систему)
-MAX_WORKERS = 4
+🔥 PROMPT / ТЕХНИЧЕСКОЕ ЗАДАНИЕ САЙТА ATLAS
 
-# Порог уверенности для matchTemplate
-TEMPLATE_THRESH = 0.65
+Общая идея
 
-# Масштаб при работе в ROI (уменьшаем, чтобы matchTemplate работал быстрее, но осторожно)
-ROI_SCALE = 1.0  # 1.0 = оригинал ROI, можно попробовать 0.75 или 0.5 если шаблоны меньше
+Создать мрачный, атмосферный промо-сайт игры Atlas в стиле Dark Souls.
+Сайт не объясняет механику подробно и не сравнивает игру с другими проектами.
+Его цель — создать ощущение опасного MMO-мира и привести игрока к скачиванию игры.
 
-# ------------------------------------------------
+⸻
 
-# Логирование простое
-def log(*args):
-    print("[", time.strftime("%H:%M:%S"), "]", *args)
+Игра
 
-# ---------- Проверка GPU (cv2.cuda) ----------
-use_cuda = False
-try:
-    cuda_count = cv2.cuda.getCudaEnabledDeviceCount()
-    if cuda_count > 0:
-        use_cuda = True
-        log(f"CUDA devices: {cuda_count} — попытаемся использовать GPU для matchTemplate")
-    else:
-        log("CUDA устройства не найдены в системе / OpenCV не собран с CUDA.")
-except Exception:
-    log("cv2.cuda недоступен (OpenCV, вероятно, без CUDA). Будем использовать CPU.")
-    use_cuda = False
+Название: Atlas
+Жанр: Multiplayer / MMO / Sandbox
+Платформа: (не указывать, если не нужно)
+Тон: серьёзный, тёмный, загадочный
 
-# ---------- Загрузка шаблонов ----------
-templates = []
-if not os.path.isdir(TEMPLATE_DIR):
-    raise FileNotFoundError(f"Папка шаблонов не найдена: {TEMPLATE_DIR}")
+⸻
 
-for fn in os.listdir(TEMPLATE_DIR):
-    if fn.lower().endswith((".png", ".jpg", ".jpeg")):
-        p = os.path.join(TEMPLATE_DIR, fn)
-        t = cv2.imread(p)
-        if t is None:
-            log("Не удалось загрузить шаблон:", p)
-            continue
-        templates.append((t, t.shape[1], t.shape[0], fn))
+Основные принципы
+	•	Только тёмная тема
+	•	Минимализм
+	•	Атмосфера > информация
+	•	Никаких сравнений с другими играми
+	•	Никаких спойлеров лейт-гейма
+	•	Детали игрок узнаёт внутри игры
+	•	Всё симметрично и визуально сбалансировано
 
-if not templates:
-    raise FileNotFoundError("Шаблоны не загружены. Положи фотографии в папку 'templates'.")
+⸻
 
-log(f"Загружено шаблонов: {len(templates)}")
+Структура сайта (обязательно)
 
-# ---------- Очередь и глобалы ----------
-frame_queue = queue.Queue(maxsize=MAX_QUEUE_SIZE)  # для raw кадров
-display_frame = None
-stop_event = threading.Event()
+1. Hero-блок (первый экран)
 
-# ---------- Захват экрана (производительный, один поток) ----------
-def capture_loop(monitor_index=1):
-    sct = mss.mss()
-    while not stop_event.is_set():
-        try:
-            img = sct.grab(sct.monitors[monitor_index])
-            frame = np.array(img)[:, :, :3]  # BGR
-            # Небольшая защита от переполнения: если очередь полна, удаляем старый кадр
-            try:
-                frame_queue.put(frame, timeout=0.01)
-            except queue.Full:
-                try:
-                    _ = frame_queue.get_nowait()  # выбросить самый старый
-                except Exception:
-                    pass
-                try:
-                    frame_queue.put(frame, timeout=0.01)
-                except Exception:
-                    pass
-        except Exception as e:
-            log("Ошибка в capture_loop:", e)
-            time.sleep(0.05)
+Цель: сразу погрузить в атмосферу
 
-# ---------- Функции поиска шаблона ----------
-# CPU вариант: классический matchTemplate на ROI
-def match_template_cpu(roi_bgr, template_bgr):
-    # roi_bgr и template_bgr — BGR numpy arrays
-    try:
-        res = cv2.matchTemplate(roi_bgr, template_bgr, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(res)
-        return max_val, max_loc
-    except Exception as e:
-        log("Ошибка CPU match:", e)
-        return 0.0, (0,0)
+Обязательно:
+	•	Большой логотип ATLAS
+	•	Подзаголовок:
+	•	“Multiplayer Sandbox MMO”
+	•	или “Every world must be conquered.”
+	•	Мрачный фон (руины, туман, тьма, огонь)
+	•	Лёгкий параллакс или анимация тумана
+	•	Место под трейлер (16:9):
+	•	видео или заглушка
+	•	Кнопки:
+	•	Download — фейковая кнопка, плавно скроллит вниз
+	•	Wiki — скроллит к секции Wiki
 
-# GPU вариант (если доступен). Используем cv2.cuda
-def match_template_gpu(roi_bgr, template_bgr):
-    try:
-        # Конвертируем в GPU-материалы (BGR -> gray предпочтительнее для скорости/памяти)
-        roi_gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
-        tpl_gray = cv2.cvtColor(template_bgr, cv2.COLOR_BGR2GRAY)
+❗ Кнопка Download в hero НЕ ведёт на файл
 
-        gpu_roi = cv2.cuda_GpuMat()
-        gpu_tpl = cv2.cuda_GpuMat()
-        gpu_roi.upload(roi_gray)
-        gpu_tpl.upload(tpl_gray)
+⸻
 
-        # matchTemplate на GPU (некоторые сборки OpenCV имеют эту функцию)
-        gpu_res = cv2.cuda.createTemplateMatching(gpu_roi.type(), cv2.TM_CCOEFF_NORMED)
-        gpu_result = gpu_res.match(gpu_roi, gpu_tpl)  # результат — GpuMat
+2. About the Game
 
-        result = gpu_result.download()
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        return max_val, max_loc
-    except Exception as e:
-        # если что-то пошло не так, логируем и падаем обратно на CPU
-        log("Ошибка GPU match (fallback to CPU):", e)
-        return 0.0, (0,0)
+Цель: объяснить, что это за игра, не раскрывая механик
 
-# Обёртка: выбираем GPU или CPU
-def match_template(roi_bgr, template_bgr):
-    if use_cuda:
-        val, loc = match_template_gpu(roi_bgr, template_bgr)
-        # Если GPU вернул нулевой результат или упал, попробуем CPU (без исключений)
-        if val is None or val == 0.0:
-            return match_template_cpu(roi_bgr, template_bgr)
-        return val, loc
-    else:
-        return match_template_cpu(roi_bgr, template_bgr)
+Текст:
+	•	Короткий
+	•	Атмосферный
+	•	Без цифр и систем
 
-# ---------- Предобработка + распределение задач по воркерам ----------
-def processing_loop():
-    global display_frame
-    # Определяем число воркеров, не более CPU_COUNT - 1
-    cpu_count = multiprocessing.cpu_count()
-    workers = max(1, min(MAX_WORKERS, max(1, cpu_count - 1)))
-    log(f"Запуск пулa воркеров: {workers} (CPU cores: {cpu_count})")
+Пример смысла:
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        # futures -> результаты match'ов
-        while not stop_event.is_set():
-            try:
-                frame = frame_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
+Atlas is a multiplayer sandbox MMO set in a dark and dangerous universe.
+Not every world is safe. Power is earned.
 
-            try:
-                # Быстрая предобработка: выделяем ROI воды на полном кадре
-                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-                mask = cv2.inRange(hsv, LOWER, UPPER)
-                kernel = np.ones((7,7), np.uint8)
-                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+⸻
 
-                # Ищем самый большой контур воды
-                best_cnt = None
-                max_area = 0
-                for cnt in contours:
-                    area = cv2.contourArea(cnt)
-                    if area > max_area:
-                        max_area = area
-                        best_cnt = cnt
+3. Core Features (Фишки, не механики)
 
-                if best_cnt is None or max_area < 20000:
-                    # воды явно нет — просто отрисуем и покажем
-                    display_frame = frame
-                    continue
+Цель: показать уникальность, но без спойлеров
 
-                x, y, w, h = cv2.boundingRect(best_cnt)
-                # Небольшое расширение ROI, но аккуратно
-                pad = 10
-                x1 = max(0, x - pad); y1 = max(0, y - pad)
-                x2 = min(frame.shape[1], x + w + pad); y2 = min(frame.shape[0], y + h + pad)
-                roi = frame[y1:y2, x1:x2]
+Формат:
+	•	3–4 блока
+	•	Короткие заголовки
+	•	Короткие описания
 
-                # При необходимости масштабируем ROI (уменьшение ускоряет поиск)
-                if ROI_SCALE != 1.0:
-                    roi_proc = cv2.resize(roi, (0,0), fx=ROI_SCALE, fy=ROI_SCALE, interpolation=cv2.INTER_AREA)
-                    scale_factor = ROI_SCALE
-                else:
-                    roi_proc = roi
-                    scale_factor = 1.0
+Обязательные фишки:
+	•	Dangerous Worlds
+	•	Sandbox Building
+	•	Player-Driven Economy
+	•	Progression Through Action
 
-                # Отправляем задачи на поиск по шаблонам (параллельно)
-                futures = []
-                for tpl, tw, th, name in templates:
-                    # если шаблон больше ROI — пропускаем
-                    if roi_proc.shape[0] < int(th * scale_factor) or roi_proc.shape[1] < int(tw * scale_factor):
-                        continue
-                    # Для экономии памяти — передаём небольшие копии
-                    tpl_resized = tpl if scale_factor == 1.0 else cv2.resize(tpl, (0,0), fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
-                    futures.append(executor.submit(match_template, roi_proc, tpl_resized))
+❌ Не указывать:
+	•	ранги
+	•	редкости
+	•	проценты
+	•	легендарные предметы
 
-                # Собираем результаты
-                best_val = 0.0
-                best_loc = None
-                best_size = None
-                for fut, (tpl, tw, th, name) in zip(futures, [t for t in templates if roi_proc.shape[0] >= int(t[2]*scale_factor) and roi_proc.shape[1] >= int(t[1]*scale_factor)]):
-                    try:
-                        val, loc = fut.result(timeout=0.5)  # таймаут, чтобы не застрять
-                    except concurrent.futures.TimeoutError:
-                        log("Timeout при ожидании совпадения шаблона")
-                        continue
-                    except Exception as e:
-                        log("Исключение в задаче match:", e)
-                        continue
+⸻
 
-                    if val > best_val:
-                        best_val = val
-                        best_loc = loc
-                        best_size = (int(tw*scale_factor), int(th*scale_factor))
-                        best_name = name
+4. Multiplayer
 
-                # Нарисуем ROI и, если найдено — поплавок
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-                if best_loc and best_val >= TEMPLATE_THRESH:
-                    bx = int(best_loc[0] / scale_factor) + x1
-                    by = int(best_loc[1] / scale_factor) + y1
-                    bw, bh = best_size
-                    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0,0,255), 2)
-                    cv2.putText(frame, f"{best_name} {best_val:.2f}", (bx, max(0,by-6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+Цель: подчеркнуть MMO-аспект
+	•	Короткий текст
+	•	Намёк на совместную игру
+	•	Без деталей
 
-                display_frame = frame
+Смысл:
 
-            except Exception as e:
-                log("Ошибка в processing_loop:", e)
-                traceback.print_exc()
-                time.sleep(0.05)
+Play solo or together.
+Cooperation unlocks deeper challenges.
 
-# ---------- Основной запуск ----------
-def main():
-    try:
-        t_cap = threading.Thread(target=capture_loop, daemon=True)
-        t_proc = threading.Thread(target=processing_loop, daemon=True)
-        t_cap.start()
-        t_proc.start()
+⸻
 
-        cv2.namedWindow("Pipeline", cv2.WINDOW_NORMAL)
-        last_time = time.time()
+5. Atmosphere (опционально, но желательно)
 
-        while True:
-            if display_frame is not None:
-                cv2.imshow("Pipeline", display_frame)
-                # простой FPS
-                now = time.time()
-                fps = 1.0 / max(1e-6, (now - last_time))
-                last_time = now
-                # вывод в заголовок окна (может не сработать в некоторых окружениях)
-                try:
-                    cv2.setWindowTitle("Pipeline", f"Pipeline - FPS ~ {fps:.1f}")
-                except Exception:
-                    pass
+Цель: закрепить стиль
+	•	1 короткий блок
+	•	Акцент на:
+	•	тьму
+	•	опасность
+	•	одиночество
+	•	силу
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
+Пример:
 
-    finally:
-        stop_event.set()
-        log("Выход... ждём завершения потоков.")
-        time.sleep(0.2)
-        cv2.destroyAllWindows()
+This is not a safe sandbox.
 
-if __name__ == "__main__":
-    main()
+⸻
+
+6. Download (реальный)
+
+Цель: основное действие сайта
+
+Обязательно:
+	•	Отдельная секция
+	•	Заголовок “Download Atlas”
+	•	Короткий текст-призыв
+	•	Единственная реальная кнопка Download
+	•	Прямая ссылка на файл
+
+❗ Только здесь настоящая ссылка на скачивание
+
+⸻
+
+7. Wiki
+
+Цель: дать путь тем, кто хочет больше информации
+
+Обязательно:
+	•	Отдельная секция
+	•	Всё по центру
+	•	Кнопка “Open Atlas Wiki”
+	•	Текст:
+	•	“Lore, mechanics and guides are documented on the Atlas Wiki.”
+
+⸻
+
+8. Footer
+
+Минимализм:
+	•	Atlas ©
+	•	All rights reserved
+	•	Без лишних ссылок
+
+⸻
+
+Визуальный стиль
+
+Цвета:
+	•	Чёрный
+	•	Тёмно-серый
+	•	Тёмно-красный (акцент)
+
+Шрифты:
+	•	Серьёзные
+	•	Читаемые
+	•	Без мультяшности
+
+Анимации:
+	•	Медленные
+	•	Плавные
+	•	Без резких эффектов
+
+⸻
+
+UX / Поведение
+	•	Плавный скролл
+	•	Hero Download → scroll к реальному Download
+	•	Всё выровнено по центру
+	•	Контент выглядит как «островки»
+	•	Никаких кривых или хаотичных элементов
+
+⸻
+
+Запрещено
+	•	Сравнения с другими играми
+	•	Спойлеры лейт-гейма
+	•	Списки лута
+	•	Проценты дропа
+	•	Сложные объяснения механик
+	•	Светлая тема
+
+⸻
+
+Цель сайта (1 фраза)
+
+Заставить игрока почувствовать опасный мир и нажать «Download».
+
+⸻
+
+Если хочешь, следующим шагом я могу:
+	•	переписать этот промт на английском идеально под Midjourney / UI-AI
+	•	сделать дизайнерскую версию (Figma-логика)
+	•	превратить его в документ ТЗ
+	•	или отполировать тексты до максимума
+
+Скажи, что нужно дальше ⚔️
