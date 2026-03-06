@@ -1,1 +1,90 @@
-pip install pyqt5 pyautogui pynput
+/* Файл styles.css */
+/* Общие стили для всей страницы */
+body {
+    font-family: 'Book Antiqua', serif; /* Использование шрифта Book Antiqua */
+    background-color: #fdf5e6; /* Бежевый фон */
+    padding: 20px;
+    line-height: 1.6;
+}
+
+/* Стилизация заголовка первого уровня */
+h1 {
+    color: #65351a; /* Коричневый цвет текста */
+    text-align: center;
+    font-size: 48px;
+    margin-bottom: 60px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.05); /* Лёгкая тень */
+}
+
+/* Стилизация заголовков второго уровня */
+h2 {
+    color: #986960; /* Тёмно-бежевый цвет */
+    font-size: 32px;
+    margin-top: 40px;
+    margin-bottom: 20px;
+    text-transform: uppercase; /* Все буквы заглавные */
+}
+
+/* Стилизация абзацев */
+p {
+    font-size: 22px;
+    margin-bottom: 20px;
+    color: #382110; /* Тёмно-коричневый текст */
+}
+
+/* Стилизация списка */
+ul {
+    list-style-type: none; /* Убираем стандартные маркеры */
+    padding-left: 0;
+}
+ul li::before {
+    content: '●'; /* Используем ● в качестве маркера */
+    margin-right: 10px;
+    color: #986960; /* Соответствие цвету заголовков */
+}
+
+/* Стилизация ссылки */
+a {
+    color: #dd7232; /* Оранжевый цвет ссылки */
+    text-decoration: none;
+}
+a:hover {
+    text-decoration: underline;
+    color: #c67d33; /* Темнее при наведении */
+}
+
+/* Стилизация изображения */
+img {
+    max-width: 70%; /* Ограничиваем ширину изображения */
+    height: auto;
+    display: block;
+    margin: 30px auto;
+    border: 10px solid #fff2cc; /* Белая рамка */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Лёгкая тень */
+}
+
+/* Стилизация таблицы */
+table {
+    width: 90%;
+    margin: 0 auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+th, td {
+    padding: 15px;
+    background-color: #fff2cc; /* Светлая бежевая заливка */
+    border: 2px solid #65351a; /* Коричневые границы */
+}
+th {
+    background-color: #986960; /* Тёмно-бежевый фон заголовков */
+    color: white;
+    font-weight: bold;
+}
+
+/* Дополнительные эффекты */
+h1, h2, a {
+    transition: all 0.3s ease-in-out; /* Плавные переходы */
+}
+
