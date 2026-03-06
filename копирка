@@ -1,20 +1,32 @@
-Atlas
+<head> <meta charset="UTF-8"> <meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+<title>Простая страница</title>
+<link rel="stylesheet" href="1.css" >
+</head>
+<body>
+<h1>Заголовок первого уровня</h1>
+<h2>Первый подзаголовок</h2>
+<p>Первый абзац текста.</p>
+<p>Второй абзац текста.</p>
+<p>Третий абзац текста.</p>
+<h2>Второй подзаголовок</h2>
+<ul>
+<li>Первый пункт списка</li>
+<li>Второй пункт списка</li>
+<li>Третий пункт списка</li>
+</ul>
+<img src="1.jpg" alt="Описание изображения">
+<br>
+<br>
+<a href="#">ссылка</a>
+<br>
+<br>
+<table>
+<tr> <th>Заголовок столбца 1</th> <th>Заголовок столбца
+2</th> </tr>
+<tr> <td>Ячейка 1</td> <td>Ячейка 2</td> </tr>
+<tr> <td>Ячейка 3</td> <td>Ячейка 4</td> </tr>
+</table>
+</body>
+</html>
 
-Multiplayer
-MMO
-Sandbox 
-
-Atlas is similar to Pixel Worlds and Growtopia with how building, farming, trading and other core features work with some added details 
-
-Atlas Exclusive features
-
-When you type in world name you don't just spawn in and break blocks if the world is new = it will have Monsters and dungeon layout you will need to clear all the monsters and the boss to make the world "Safe spot" after you clear the monsters you can Lock the world and become owner of it. The more monsters you kill the higher your Monster Killer rank will be from E-S the more monsters you kill the higher tier and more content and stuff will unlock based on your rank this also includes Guild Ranks from E-S guilds can go on Guild Raids do fight strong monsters and clear dungeon in given time but this is late game content on top of that it will have leveling system separate from Monster killer ranks which also will give bonuses.
-
-Special items can be bought via IAPs or by killing monsters and getting drops from them some items have very low drop rate and others are common
-you can also buy packs for basic clothes or splice them with seeds
-
-Legendary+ Items can be obtained via Guild Raids and only obtainable by high level guilds there is only 1-3 of them maximum and they are given to a guild for a limited time after which it will disappear and spawn in Guild raid dungeons again one guild can hold only 1 of these legendary items because they provide strong buffs to the guild members they are supposed to be one of the rarest items in the late game hardcore content 
-
-Basic features like Trading between players will work like in Pixel Worlds / Growtopia players will have a currency that can be obtained via gameplay and using that trade for items from other players 
-
-Building your world will require blocks that can be splicable or obtained via shop packs
