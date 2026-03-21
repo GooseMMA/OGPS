@@ -1,6 +1,24 @@
 import random
+import turtle
 
-n = int(input("Сколько точек бросить? "))
+# Запрашиваем количество точек у пользователя
+n = int(input("Сколько точек бросить? (например, 500): "))
+
+# Настройка окна
+screen = turtle.Screen()
+screen.setup(600, 600)
+screen.tracer(0)
+
+turtle.speed(0)
+turtle.hideturtle()
+
+# Рисуем круг
+turtle.penup()
+turtle.goto(0, -200)
+turtle.pendown()
+turtle.color("blue")
+turtle.circle(200)
+turtle.penup()
 
 count_inside = 0
 
@@ -8,8 +26,22 @@ for i in range(n):
     x = random.uniform(-1, 1)
     y = random.uniform(-1, 1)
 
+    screen_x = x * 200
+    screen_y = y * 200
+
+    turtle.goto(screen_x, screen_y)
+
     if x**2 + y**2 <= 1:
         count_inside += 1
+        turtle.color("green")
+    else:
+        turtle.color("red")
+
+    turtle.dot(2)
+
+screen.update()
 
 pi_approx = 4 * count_inside / n
-print(pi_approx)
+print(f"Приближение числа π после {n} точек: {pi_approx}")
+
+turtle.done()
