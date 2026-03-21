@@ -1,14 +1,16 @@
 import random
 import turtle
 
+# Количество точек
 n = int(input("Сколько точек бросить? "))
 
+# Настройка окна
 turtle.setup(600, 600)
 turtle.speed(0)
 turtle.hideturtle()
 turtle.tracer(0)
 
-# Рисуем квадрат
+# Рисуем квадрат (область 0..1)
 turtle.penup()
 turtle.goto(-200, -200)
 turtle.pendown()
@@ -18,22 +20,22 @@ for _ in range(4):
 
 # Рисуем параболу y = x^2
 turtle.penup()
-turtle.goto(-200, -200)  # начало координат в левом нижнем углу
+turtle.goto(-200, -200)
 turtle.pendown()
 turtle.color("blue")
 
 for x in range(-200, 201, 5):
-    # перевод в математические координаты (0..1)
-    x_math = (x + 200) / 400
+    x_math = (x + 200) / 400      # перевод в диапазон 0..1
     y_math = x_math ** 2
     y_scr = -200 + y_math * 400
     turtle.goto(x, y_scr)
 
 turtle.penup()
 
+# Монте-Карло
 count = 0
 
-for i in range(n):
+for _ in range(n):
     x_math = random.random()
     y_math = random.random()
 
@@ -43,14 +45,17 @@ for i in range(n):
     turtle.goto(x_scr, y_scr)
 
     if y_math <= x_math ** 2:
-        count += 1
         turtle.color("green")
+        count += 1
     else:
         turtle.color("red")
 
-    turtle.dot(2)
+    turtle.dot(3)
 
 turtle.update()
 
-print(f"Оценка площади: {count/n}")
+# Результат
+print("Оценка площади:", count / n)
+print("Точное значение:", 1/3)
+
 turtle.done()
