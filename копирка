@@ -1,1 +1,15 @@
-https://keo.gov39.ru/storage/a709144fab2bb3da02b5c32b0cde6f06?filename=Метод+Монте_Карло.pdf&domain=klgd1615544342
+import random
+
+n = int(input("Сколько точек бросить? "))
+
+count_inside = 0
+
+for i in range(n):
+    x = random.uniform(-1, 1)
+    y = random.uniform(-1, 1)
+
+    if x**2 + y**2 <= 1:
+        count_inside += 1
+
+pi_approx = 4 * count_inside / n
+print(pi_approx)
