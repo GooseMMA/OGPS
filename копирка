@@ -1,47 +1,106 @@
-import random
-import turtle
+-- ==================== НАСТРОЙКИ ====================
+local WORLDS_TO_FARM = 4
+local RETURN_WORLD = "GRING"
+local WATER_ID = 1344
+local counter = 0
+-- ===================================================
 
-# Запрашиваем количество точек у пользователя
-n = int(input("Сколько точек бросить? (например, 500): "))
+local function log(msg) print("[BOT] " .. msg) end
 
-# Настройка окна
-screen = turtle.Screen()
-screen.setup(600, 600)
-screen.tracer(0)
+-- Генератор имён: 15 символов, начинается с буквы, хорошая перемешка
+local function randName()
+    counter = counter + 1
+    local letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    local alnum = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    local name = letters:sub((counter % 26) + 1, 1)
+    
+    -- LCG-сид для качественного распределения символов
+    local s = counter * 7919 + 104729
+    for i = 1, 14 do
+        s = (s * 1103515245 + 12345) % 2147483648
+        local idx = (s % 36) + 1
+        name = name .. alnum:sub(idx, idx)
+    end
+    return name
+end
 
-turtle.speed(0)
-turtle.hideturtle()
+-- Безопасные обёртки
+local function send(pkt)  pcall(bot.sendPacket, bot, pkt) end
+local function wait(ms)   bot:sleep(ms) end
 
-# Рисуем круг
-turtle.penup()
-turtle.goto(0, -200)
-turtle.pendown()
-turtle.color("blue")
-turtle.circle(200)
-turtle.penup()
+-- Фарм воды
+local function farmWater()
+    local ok, world = pcall(bot.getWorld, bot)
+    if not ok or not world or not world.tiles or not world.tiles.water then
+        log("⚠️ Мир не синхронизирован, пропускаю")
+        return
+    end
 
-count_inside = 0
+    local w, h = world.width, world.height
+    local waterArr = world.tiles.water
+    local mined = 0
 
-for i in range(n):
-    x = random.uniform(-1, 1)
-    y = random.uniform(-1, 1)
+    for y = 0, h - 1 do
+        for x = 0, w - 1 do
+            if waterArr[y * w + x + 1] == WATER_ID then
+                local standY = y + 1
+                if standY >= h then standY = y end
 
-    screen_x = x * 200
-    screen_y = y * 200
+                local okP, path = pcall(bot.findPath, bot, x, standY)
+                if okP and path and #path > 0 then
+                    for _, p in ipairs(path) do
+                        pcall(bot.walkTo, bot, p.x, p.y)
+                        wait(120)
+                    end
+                end
+                wait(80)
 
-    turtle.goto(screen_x, screen_y)
+                for i = 1, 5 do
+                    send({ ID = "HBW", x = x, y = y })
+                    wait(80)
+                end
 
-    if x**2 + y**2 <= 1:
-        count_inside += 1
-        turtle.color("green")
-    else:
-        turtle.color("red")
+                pcall(bot.collect, bot)
+                wait(150)
+                mined = mined + 1
+            end
+        end
+        wait(10) -- Сброс нагрузки для стабильности WebSocket
+    end
+    log("✅ Сломано блоков: " .. mined)
+end
 
-    turtle.dot(2)
+-- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+log("=== ЗАПУСК ===")
 
-screen.update()
+for i = 1, WORLDS_TO_FARM do
+    log("🔄 Мир " .. i .. "/" .. WORLDS_TO_FARM)
 
-pi_approx = 4 * count_inside / n
-print(f"Приближение числа π после {n} точек: {pi_approx}")
+    -- 1. Выход в меню
+    send({ ID = "LW" })
+    wait(3000)
 
-turtle.done()
+    -- 2. Создание мира WB=4
+    local W = randName()
+    log("   Создаю: " .. W .. " (WB=4)")
+    send({ ID = "Gw", W = W, eID = "", WB = 4 })
+    wait(3000)
+
+    -- 3. Вход на мир
+    log("   Захожу...")
+    send({ ID = "TTjW", W = W, WB = 0, Amt = 0 })
+    wait(3000)
+
+    -- 4. Фарм
+    log("   Фарм...")
+    farmWater()
+
+    -- 5. Возврат на GRING
+    log("   Возврат на " .. RETURN_WORLD)
+    send({ ID = "LW" })
+    wait(3000)
+    send({ ID = "TTjW", W = RETURN_WORLD, WB = 0, Amt = 0 })
+    wait(3000)
+end
+
+log("=== ЗАВЕРШЕНО ===")
